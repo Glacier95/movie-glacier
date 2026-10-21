@@ -1,0 +1,42 @@
+.overview-page{position:relative;isolation:isolate}.overview-wall{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;background:#0a101b}.mosaic-grid{display:grid;grid-template-columns:repeat(var(--mosaic-columns),minmax(0,1fr));gap:16px;position:absolute;inset:-12px;filter:blur(var(--mosaic-blur,3px)) saturate(var(--mosaic-saturation,.65));opacity:var(--mosaic-opacity,.25)}.mosaic-column{min-width:0;transform:translateY(calc(var(--mosaic-height) * -1.5))}.mosaic-stagger{transform:translateY(calc(var(--mosaic-height) * -2))}.mosaic-track{will-change:transform}.mosaic-tile{height:var(--mosaic-height);padding-bottom:16px}.mosaic-tile img{height:100%;width:100%;object-fit:cover;border-radius:12px;background:#1e2a3e}.mosaic-shade{position:absolute;inset:0;background:linear-gradient(180deg,#0a101b55,#0a101b88 50%,#0a101bba)}
+.overview-heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:10px 0 30px}.overview-eyebrow{font-size:10px;letter-spacing:.24em;color:#a9bfdc}.overview-heading h1{font-size:clamp(40px,5vw,64px);letter-spacing:-.055em;line-height:1.1;margin:14px 0}.overview-dot{color:#a8dccc}.overview-heading p{color:#b8c9df;font-size:14px;line-height:1.8;margin:0}.overview-controls{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:22px}.overview-controls>span{display:flex;gap:5px;align-items:center;color:#b5c8df;font-size:12px}.overview-scopes{display:flex;gap:5px;border:1px solid #b9d7ff20;border-radius:12px;background:var(--glass);padding:5px}.overview-scopes button{padding:8px 16px;border:1px solid transparent;border-radius:8px;color:#b7c9df;font-size:12px}.app-shell .overview-scopes button[aria-pressed=true]{background:#b7d4ff25;color:#fff;border-color:#c0ddff42}
+.overview-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:22px}.overview-metric{background:var(--glass);backdrop-filter:blur(var(--panel-blur,8px)) saturate(140%);border:1px solid #b9d7ff26;border-radius:16px;padding:24px;box-shadow:0 8px 30px #0002}.overview-metric>span{font-size:10px;letter-spacing:.12em;color:#c2d2e8}.overview-metric strong{display:block;font-size:clamp(26px,3.5vw,43px);font-weight:500;letter-spacing:-.04em;margin:12px 0;color:#edf5ff;font-variant-numeric:tabular-nums}.overview-metric small{font-size:11px;color:#a3b7d0;line-height:1.6;display:block}.overview-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.overview-panel{min-width:0;background:var(--glass);backdrop-filter:blur(var(--panel-blur,8px)) saturate(140%);border:1px solid #b9d7ff26;border-radius:18px;padding:24px;box-shadow:0 12px 45px #0002;animation:overview-enter .6s both}.overview-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.panel-index{color:#89a3c4;font-size:10px;letter-spacing:.16em}.overview-panel h2{font-size:19px;letter-spacing:-.02em;margin:10px 0 7px}.overview-panel-heading p{font-size:12px;color:#a8bcd6;margin:0 0 18px;line-height:1.6}.overview-chart{width:100%;min-width:0}.chart-empty{height:245px;display:grid;place-items:center;color:#8ea5c3;font-size:13px}.chart-data{border-top:1px solid #c3dcff17;padding-top:14px;font-size:12px;color:#afc5e0}.chart-data summary{cursor:pointer;width:fit-content;padding:4px}.chart-data>div{max-height:230px;overflow:auto;margin-top:10px;display:grid;gap:4px}.chart-data button{display:flex;justify-content:space-between;text-align:left;gap:20px;padding:8px 10px;border:1px solid #c0d7fa1a;border-radius:6px;color:#d2e1f5}.overview-notes p{font-size:13px;line-height:1.9;color:#b2c6df}.overview-notes>div{display:flex;align-items:baseline;gap:14px;margin:20px 0}.overview-notes strong{font-size:28px;color:#b9dccc;font-weight:500}.overview-notes span,.overview-notes small{font-size:12px;color:#9db4d0}.overview-empty{padding:30px;border:1px dashed #b8d7ff42;border-radius:16px;margin-bottom:22px;background:var(--glass);backdrop-filter:blur(var(--panel-blur,8px)) saturate(140%)}.overview-empty h2{font-size:20px}.overview-empty p{color:#b6c8dd;font-size:14px}.overview-selection{width:650px}.overview-titles>div{display:flex;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid #d0e3ff18}.overview-titles img{width:44px;height:66px;object-fit:cover;border-radius:5px}.overview-titles strong{font-size:14px}.overview-titles small{display:block;color:#acbed4;margin-top:8px;font-size:12px}@keyframes overview-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:950px){.overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-panel{padding:18px}.overview-controls>span{display:none}}@media(max-width:650px){.overview-panels{grid-template-columns:1fr}.overview-heading{align-items:flex-start;flex-direction:column}.overview-metric{padding:16px}.overview-metrics{gap:10px}.overview-scopes button{padding:8px 12px}}@media(prefers-reduced-motion:reduce){.overview-panel{animation:none!important}}
+
+.overview-metrics .overview-metric:last-child:nth-child(odd){grid-column:auto}@media(max-width:650px){.overview-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.overview-metric{padding:14px 10px}.overview-metric strong{font-size:25px}.overview-metric>span{font-size:8px;letter-spacing:.04em}.overview-metric small{font-size:10px}}
+
+/* Seven cards across three desktop rows: 2 + 2 + (half + quarter + quarter). */
+.overview-panels{grid-template-columns:repeat(4,minmax(0,1fr))}
+.overview-panel{grid-column:span 2}
+.panel-directors,.panel-actors{grid-column:span 1}
+.panel-directors .overview-panel-heading p,.panel-actors .overview-panel-heading p{min-height:38px}
+@media(max-width:1050px){.overview-panels{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-panel{grid-column:span 1}.panel-ratings{grid-column:span 2}}
+@media(max-width:650px){.overview-panels{grid-template-columns:1fr}.overview-panel,.panel-ratings{grid-column:span 1}}
+
+.rating-summaries{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.rating-source{--rating-color:#9dc9ff;min-width:0;padding:14px;border:1px solid #b9d7ff20;border-radius:12px;background:#0c17264d}
+.rating-douban{--rating-color:#9ee2cd}
+.rating-source-heading{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap}
+.rating-source-heading strong{font-size:12px;color:var(--rating-color);font-weight:600}
+.rating-source-heading>span{font-size:10px;color:#a8bcd6;font-variant-numeric:tabular-nums}
+.rating-average{display:flex;align-items:baseline;gap:9px;margin:10px 0}
+.rating-average>strong{font-size:32px;font-weight:500;letter-spacing:-.05em;line-height:1.2;color:#edf5ff;font-variant-numeric:tabular-nums}
+.rating-average>span{font-size:10px;color:#a8bcd6}
+.rating-details{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap;color:#9eb3ce;font-size:10px;line-height:1.7}
+.rating-details b{font-weight:500;color:#d5e5f7;font-variant-numeric:tabular-nums}
+.rating-coverage{height:3px;border-radius:3px;background:#c5daff12;margin-top:10px;overflow:hidden}
+.rating-coverage>span{display:block;height:100%;border-radius:inherit;background:var(--rating-color);opacity:.75}
+.rating-controls{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.rating-segments{display:flex;padding:3px;gap:2px;border:1px solid #b9d7ff20;border-radius:9px;background:#0b15243d}
+.rating-segments button{padding:6px 9px;color:#9fb4cf;font-size:11px;border:1px solid transparent;border-radius:6px;white-space:nowrap}
+.rating-segments button:hover{color:#eaf3ff;background:#c5daff0c}
+.rating-segments button[aria-pressed=true]{color:#eaf3ff;background:#b7d4ff20;border-color:#b7d4ff25}
+.rating-notes{margin:4px 0 16px;color:#b8cde5;line-height:1.7}
+.rating-notes p{font-size:11px;margin:0 0 4px}
+.rating-notes small{display:block;font-size:10px;color:#859ebd}
+.panel-directors,.panel-actors{display:flex;flex-direction:column}
+/* The chart height depends only on its data, never on a sibling's expanded details.
+   Letting it grow feeds the SVG's measured height back into the grid's next layout. */
+.panel-directors .overview-chart,.panel-actors .overview-chart{flex:0 0 auto;min-height:0;overflow:hidden}
+.panel-directors .chart-data,.panel-actors .chart-data{margin-top:auto}
+@media(max-width:420px){.rating-summaries{gap:8px}.rating-source{padding:11px}.rating-average>strong{font-size:29px}.rating-segments button{padding:6px 8px}}

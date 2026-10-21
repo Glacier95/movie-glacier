@@ -1,0 +1,82 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { _electron as electron } from 'playwright-core';
+import { Store } from '../dist-electron/electron/store.js';
+import { posterWallDefaults, posterWallControls } from '../dist-electron/src/shared.js';
+
+fs.mkdirSync('.cache', { recursive: true });
+const data = fs.mkdtempSync(path.resolve('.cache/wall-settings-'));
+const media = path.join(data, 'media'); fs.mkdirSync(media); fs.mkdirSync(path.join(data, 'images'));
+const poster = `${'a'.repeat(40)}.png`;
+fs.copyFileSync('build/icon.png', path.join(data, 'images', poster));
+const store = await Store.open(path.join(data, 'library.sqlite'), path.resolve('dist-electron/sql-wasm.wasm'), {
+  isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => ''
+});
+const id = store.createWork('movie', 'Poster wall preview', 2020);
+store.setWorkFields(id, { poster, titleEn: 'Poster wall preview', matchState: 'matched' });
+const file = path.join(media, 'fixture.mkv'); fs.writeFileSync(file, 'fixture');
+store.putAsset({ workId: id, root: media, path: file, kind: 'file', season: null, episode: null, size: 1, mtimeMs: 1 }, Date.now());
+store.setRoots([media]); store.close();
+const packaged = process.env.FILM_LIBRARY_PACKAGED === '1';
+const launch = () => electron.launch({ executablePath: path.resolve(packaged ? 'release/win-unpacked/Movie Glacier.exe' : 'node_modules/electron/dist/electron.exe'), args: packaged ? ['--no-sandbox', '--disable-gpu'] : ['--no-sandbox', '--disable-gpu', '.'], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' } });
+const subset = settings => Object.fromEntries(posterWallControls.map(({ key }) => [key, settings[key]]));
+let app;
+try {
+  app = await launch(); let page = await app.firstWindow(); page.setDefaultTimeout(15_000);
+  const errors = []; page.on('pageerror', error => errors.push(String(error)));
+  await page.locator('.poster-card').waitFor();
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), posterWallDefaults, 'old profiles keep the original appearance');
+  for (const { key, min, max } of posterWallControls) for (const value of [min - 1, max + 1, 1.5, null, '10']) {
+    await assert.rejects(page.evaluate(patch => window.library.setSettings(patch), { [key]: value }), /Overview/);
+  }
+  await assert.rejects(page.evaluate(() => window.library.setSettings({ overviewBlur: 10, overviewSpeed: -1 })), /Overview/);
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), posterWallDefaults, 'invalid patches cannot partially save');
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await page.locator('.mosaic-track').first().waitFor();
+  await page.getByRole('banner').getByRole('button', { name: '设置', exact: true }).click();
+  const openSettings = () => page.getByRole('banner').getByRole('button', { name: '设置', exact: true }).click();
+  const slider = name => page.getByRole('slider', { name, exact: true });
+  await slider('海报墙模糊程度').press('Home'); await slider('海报墙模糊程度').press('ArrowRight');
+  await slider('海报墙不透明度').press('End'); await slider('海报墙不透明度').press('ArrowLeft');
+  await slider('海报墙滚动速度').press('Home');
+  await slider('海报墙色彩饱和度').press('End');
+  const style = await page.locator('.mosaic-grid').evaluate(el => ({ filter: getComputedStyle(el).filter, opacity: getComputedStyle(el).opacity }));
+  assert.equal(style.filter, 'blur(1px) saturate(2)'); assert.equal(style.opacity, '0.99');
+  const position = await page.locator('.mosaic-track').first().getAttribute('style');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('.mosaic-track').first().getAttribute('style'), position, 'speed zero stops movement');
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), posterWallDefaults, 'preview does not persist');
+  await page.locator('.wall-settings').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.resolve('.cache/wall-settings-preview.png') });
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0.25');
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).filter), 'blur(3px) saturate(0.65)');
+  await openSettings();
+  await slider('海报墙模糊程度').press('End'); await slider('海报墙不透明度').press('Home');
+  await slider('海报墙滚动速度').press('End'); await slider('海报墙色彩饱和度').press('Home');
+  await page.getByRole('button', { name: '保存设置', exact: true }).click();
+  const expected = { overviewBlur: 50, overviewOpacity: 0, overviewSpeed: 200, overviewSaturation: 0 };
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), expected);
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0');
+  await app.close(); app = await launch(); page = await app.firstWindow(); page.setDefaultTimeout(15_000);
+  page.on('pageerror', error => errors.push(String(error)));
+  await page.locator('.poster-card').waitFor();
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), expected, 'wall settings survive application restart');
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await openSettings();
+  await page.locator('.wall-settings').getByRole('button', { name: '恢复默认效果', exact: true }).click();
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0.25');
+  await page.evaluate(() => { window.__wallTrack = document.querySelector('.mosaic-track'); });
+  await slider('海报墙滚动速度').press('End');
+  assert.equal(await page.evaluate(() => window.__wallTrack === document.querySelector('.mosaic-track')), true, 'speed changes keep the existing track and images');
+  await page.locator('.wall-settings').getByRole('button', { name: '恢复默认效果', exact: true }).click();
+  await page.getByRole('button', { name: '保存设置', exact: true }).click();
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), posterWallDefaults);
+  await page.evaluate(() => window.library.setSettings({ language: 'en' }));
+  await page.getByRole('banner').getByRole('button', { name: 'Settings', exact: true }).click();
+  assert.doesNotMatch(await page.locator('.wall-settings').innerText(), /[\u3400-\u9fff]/);
+  assert.equal(await page.getByRole('slider', { name: 'Poster wall opacity', exact: true }).inputValue(), '25');
+  assert.deepEqual(errors, []);
+  console.log('Poster wall settings passed: defaults, range validation, live preview, cancellation, persistence, restart, reset, motion and English.');
+} finally { await app?.close(); }

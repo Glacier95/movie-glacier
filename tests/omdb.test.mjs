@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { chooseOmdbCandidate, lookupYear, omdbQueries } from '../dist-electron/electron/omdb.js';
+
+const candidate = (Title, Year, imdbID) => ({ Title, Year, imdbID });
+
+test('OMDb fallback rejects similarly named extras and accepts one-year release differences', () => {
+  assert.equal(chooseOmdbCandidate('Dogville', 2003, [
+    candidate('Dogville Confessions', '2003', 'tt0357608'),
+    candidate('Dogville', '2004', 'tt0276919')
+  ])?.imdbID, 'tt0276919');
+  assert.equal(chooseOmdbCandidate('Ex Machina', 2014, [
+    candidate('Ex Machina (2014)/Crash (2004) - Movie Buff Specialists', '2014', 'tt9999999'),
+    candidate('Ex Machina', '2015', 'tt0470752')
+  ])?.imdbID, 'tt0470752');
+  assert.equal(chooseOmdbCandidate('Mirror', 1975, [candidate('The Mirror', '1975', 'tt0072443')])?.imdbID,
+    'tt0072443');
+  assert.equal(chooseOmdbCandidate('Nymphomaniac Vol I', 2013,
+    [candidate('Nymphomaniac: Vol. I', '2014', 'tt1937390')])?.imdbID, 'tt1937390');
+  assert.equal(chooseOmdbCandidate('Solaris', 1972, [candidate('Solaris', '2002', 'tt0307479')]), null);
+  assert.equal(chooseOmdbCandidate('Fargo', 1996, [
+    candidate('Fargo', '1996', 'tt0116282'), candidate('Fargo', '1996', 'tt2222222')
+  ]), null, 'indistinguishable results need confirmation');
+});
+
+test('series matching uses the earliest local season rather than a later revival year', () => {
+  const asset = (name, season) => ({ path: path.join('D:', 'media', name), kind: 'file', season });
+  const work = { mediaType: 'tv', titleZh: '双峰 Twin Peaks', titleEn: 'Twin Peaks', originalTitle: 'Twin Peaks', year: 2017,
+    assets: [asset('Twin.Peaks.S03E01.2017.mkv', 3), asset('Twin.Peaks.S01E01.1990.mkv', 1)] };
+  assert.equal(lookupYear(work), 1990);
+  assert.equal(omdbQueries(work)[0], 'Twin Peaks');
+  assert.equal(chooseOmdbCandidate('Twin Peaks', lookupYear(work), [
+    candidate('Twin Peaks', '2017', 'tt4093826'), candidate('Twin Peaks', '1990–1991', 'tt0098936')
+  ])?.imdbID, 'tt0098936');
+});
+
+test('1983 Nostalgia searches its IMDb spelling before similarly named films', () => {
+  const work = { mediaType: 'movie', titleZh: 'Nostalgia', titleEn: 'Nostalgia', originalTitle: 'Nostalgia', year: 1983 };
+  assert.deepEqual(omdbQueries(work), ['Nostalghia', 'Nostalgia']);
+});
