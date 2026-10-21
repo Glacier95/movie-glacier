@@ -1,10 +1,49 @@
 # Movie Glacier
 
-Windows 本地影视库，基于 Electron、React、TypeScript 和 SQLite，支持电影／剧集扫描、海报浏览、双语资料、收藏和片库统计。
+把磁盘里的电影和剧集整理成一座可以浏览的私人片库。Movie Glacier 是一款 Windows 本地影视库应用：以海报墙展示收藏，整合中英文影片资料与评分，通过交互图表回顾片库，并使用 PotPlayer 播放本地原文件。基于 Electron、React、TypeScript 和 SQLite 构建，提供中文和英文界面。
 
-[下载安装包](https://github.com/Glacier95/movie-glacier/releases/latest) · [反馈问题](https://github.com/Glacier95/movie-glacier/issues) · [MIT 许可证](LICENSE)
+Turn the movies and series on your drives into a personal library you can explore. Movie Glacier is a Windows desktop app for browsing poster collections, finding bilingual metadata and ratings, exploring your collection through interactive charts, and playing original local files with PotPlayer. Built with Electron, React, TypeScript, and SQLite, it offers Chinese and English interfaces.
 
-Windows 本地影视库：扫描电影与剧集，显示海报和资料，使用 PotPlayer 播放原文件。媒体目录只读。软件设置、SQLite 数据库、海报、网页会话及缓存统一保存在安装目录下的 `user-data` 文件夹中。开发运行使用项目目录下的 `user-data`；测试使用独立目录。
+[下载安装包 / Download](https://github.com/Glacier95/movie-glacier/releases/latest) · [反馈问题 / Issues](https://github.com/Glacier95/movie-glacier/issues) · [MIT 许可证 / License](LICENSE)
+
+## 功能亮点 · Features
+
+- **本地影视整理 / Local media library** — 扫描电影、剧集与完整蓝光目录，识别季集并管理同片多版本。Scan movies, series, and Blu-ray folders, recognize seasons and episodes, and keep multiple versions of a title together.
+- **海报浏览 / Poster browsing** — 以海报墙浏览片库，支持收藏、筛选、排序，以及片名、导演和演员的中英文搜索。Browse a poster grid with favorites, filters, sorting, and Chinese or English search for titles, directors, and cast.
+- **影片资料与评分 / Metadata and ratings** — 从 TMDB、OMDb 与豆瓣补充海报、演职员、简介及 IMDb／豆瓣评分，也可手动修正匹配结果。Retrieve artwork, credits, summaries, and IMDb/Douban ratings through TMDB, OMDb, and Douban, with manual corrections when needed.
+- **片库统计 / Collection insights** — Overview 展示类型、年代、地区、评分分布与导演／演员榜单，点击图表可查看相关作品。Explore genres, release years, production regions, rating distributions, and director/cast rankings, then click charts to find related titles.
+- **可调节的界面 / Customizable appearance** — 海报背景、毛玻璃面板和 Overview 动态海报墙均可调整，支持全屏浏览。Adjust poster backgrounds, glass panels, and the animated Overview poster wall, with fullscreen browsing available.
+- **原文件播放 / Original-file playback** — 使用单独安装的 PotPlayer 播放本地资源；媒体目录只读。Play local media in a separately installed PotPlayer; source media folders are read-only.
+
+## 界面预览 · Screenshots
+
+### 海报片库 · Poster library
+
+用海报浏览电影，按中英文片名、导演或演员搜索，并通过收藏、筛选与排序找到想看的作品。背景随当前悬停的海报柔和变化。
+
+Browse movies by their posters, search by title, director, or cast in Chinese or English, and find something to watch with favorites, filters, and sorting. The background adapts softly to the poster under your pointer.
+
+![Movie Glacier 海报片库：海报浏览、搜索、收藏与筛选 / Poster library with search, favorites, and filters](pictures/1.png)
+
+### 片库概览 · Collection overview
+
+在动态海报墙前查看收藏规模与电影／剧集构成，通过类型分布和类型交织图了解片库。向下还可探索年代、地区、评分和演职员统计。
+
+See your collection size and movie/series breakdown against an animated poster wall, then explore genre distributions and relationships. Further down, discover release years, production regions, ratings, and director/cast statistics.
+
+![Movie Glacier Overview：片库计数、类型分布与类型交织 / Collection overview with title counts, genre distribution, and genre relationships](pictures/2.png)
+
+## 快速开始 · Quick start
+
+1. 从 [GitHub Releases](https://github.com/Glacier95/movie-glacier/releases/latest) 下载并安装 Windows x64 安装包，另行安装 PotPlayer。Download and install the Windows x64 installer from Releases, and install PotPlayer separately.
+2. 首次启动时选择影视目录、确认播放器路径，并填写自己的 OMDb API Key 或 TMDB 读取令牌。On first launch, select your media folders, confirm the player path, and enter your own OMDb API key or TMDB read access token.
+3. 完成扫描后浏览片库；有新文件时点击“更新库”。在设置中可切换中文／英文界面。Browse after the initial scan, click “Update library” when new files arrive, and choose Chinese or English in Settings.
+
+## 本地数据 · Local data
+
+媒体目录只读。软件设置、SQLite 数据库、海报、网页会话及缓存统一保存在安装目录下的 `user-data` 文件夹中。开发运行使用项目目录下的 `user-data`；测试使用独立目录。
+
+Source media folders are read-only. Settings, the SQLite database, artwork, browser sessions, and caches are stored in `user-data` inside the installation directory. Development uses `user-data` in the project directory; tests use separate directories.
 
 ## 使用
 
