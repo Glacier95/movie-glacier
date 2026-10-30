@@ -6,8 +6,9 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell
 import { backgroundBlurDefault, posterWallDefaults, posterWallControls, appearanceDefaults, appearanceControls, type AppearanceSettings, type PosterWallSettings } from '../src/shared.js';
 import type { ConnectionChecks, JobState, MatchCandidate, MetadataSource, PublicSettings, Work, WorkEdit } from '../src/shared.js';
 import { discover, findNfoId, localPoster, parseName, type DiscoveredMedia } from './scanner.js';
-import { localWorkMatches, repairParsedWork } from './local-match.js';
+import { localWorkMatches, repairParsedWork, reconcileSeries } from './local-match.js';
 import { lookupYear } from './omdb.js';
+import { knownSeries } from './media-titles.js';
 import { cacheImageDir, cacheLocalImage, Metadata } from './metadata.js';
 import { Store } from './store.js';
 import { Douban } from './douban.js';
@@ -42,7 +43,7 @@ function progress(patch: Partial<JobState>): void {
 }
 function changed(): void { notify('changed'); }
 function networkFailure(error: unknown): boolean {
-  return /网络连接失败|fetch failed|net::ERR_|超时|timeout|HTTP (429|50[0-9])/.test(String(error));
+  return /网络连接失败|fetch failed|net::ERR_|超时|timeout|HTTP (429|50[0-9])|请求额度已用尽|Request limit reached/i.test(String(error));
 }
 
 function discoverPlayer(): string {
@@ -133,6 +134,8 @@ async function processMedia(media: DiscoveredMedia, seen: number, repair = false
 }
 
 async function refreshDoubanWork(work: Work): Promise<string> {
+  const seasons = [...new Set(work.assets.map(asset => asset.season).filter((value): value is number => value !== null))].sort((a, b) => a - b);
+  if (work.mediaType === 'tv' && seasons.length) return refreshDoubanSeasons(work, seasons);
   let doubanId = work.doubanId;
   let crosswalkError = '';
   if (!doubanId && work.mediaType === 'movie' && work.imdbId) {
@@ -170,14 +173,34 @@ async function refreshDoubanWork(work: Work): Promise<string> {
   if (work.mediaType !== 'tv') throw new Error(doubanId
     ? `已定位豆瓣条目 ${doubanId}，但暂时无法读取详情；请稍后重试或完成豆瓣验证`
     : `豆瓣没有找到可靠匹配的条目${crosswalkError ? `；IMDb 编号对照失败：${crosswalkError}` : ''}`);
+  throw new Error('豆瓣没有找到可靠匹配的剧集或分季条目');
+}
+
+async function refreshDoubanSeasons(work: Work, seasons: number[]): Promise<string> {
   let found = 0;
   const notes: string[] = [];
-  const seasons = [...new Set(work.assets.map(asset => asset.season).filter((value): value is number => value !== null))].sort((a, b) => a - b);
+  const canonical = [work.titleZh, work.titleEn, work.originalTitle].map(knownSeries).find(Boolean);
   for (const season of seasons) {
-    const seasonSubject = await douban.findSubject(work, season);
-    if (!seasonSubject) continue;
+    let seasonSubject = await douban.findSubject(work, season);
+    let wholeSeries = false;
+    if (!seasonSubject && season === 1) {
+      seasonSubject = await douban.findSubject(work);
+      wholeSeries = Boolean(seasonSubject);
+    }
+    if (!seasonSubject) { notes.push(`第 ${season} 季暂未匹配`); continue; }
+    const current = store.work(work.id)!;
+    const imdbId = !current.imdbId && season === 1 && /^tt\d{7,10}$/.test(seasonSubject.imdbId ?? '') ? seasonSubject.imdbId : null;
+    store.setWorkFields(work.id, {
+      ...(canonical ? { doubanTitleZh: canonical.titleZh, titleZh: canonical.titleZh } : {}),
+      ...(wholeSeries && !current.doubanId ? { doubanId: seasonSubject.id } : {}),
+      ...((!current.doubanOverviewZh || season === 1) && seasonSubject.overviewZh ? { doubanOverviewZh: seasonSubject.overviewZh } : {}),
+      ...(!current.doubanTags.length && seasonSubject.tagsZh?.length ? { doubanTags: seasonSubject.tagsZh } : {}),
+      ...(imdbId ? { imdbId } : {})
+    });
+    store.applyManualFields(work.id);
+    if (imdbId && store.work(work.id)?.imdbId && !work.tmdbId) store.queueTask('tmdb', work.id);
     if (seasonSubject.rating !== null) {
-      store.setRating(work.id, 'douban', season, seasonSubject.rating, seasonSubject.votes, seasonSubject.id);
+      store.setRating(work.id, 'douban', wholeSeries ? null : season, seasonSubject.rating, seasonSubject.votes, seasonSubject.id);
       notes.push(`第 ${season} 季 ${seasonSubject.rating.toFixed(1)} 分`);
     }
     found++;
@@ -313,6 +336,7 @@ async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobS
   job = freshJob(kind);
   progress({ phase: kind === 'scan' ? '正在检查影视目录' : '正在刷新影片资料' });
   try {
+    reconcileSeries(store);
     if (kind === 'scan') {
       for (const root of store.roots()) {
         const seen = Date.now();
@@ -346,7 +370,8 @@ async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobS
         store.queueTask('douban', work.id);
       }
     }
-    const needsMetadata = store.pendingTasks().some(task => task.type === 'tmdb') || store.hasFailedTasks('tmdb');
+    store.retryFailed();
+    const needsMetadata = store.pendingTasks().some(task => task.type === 'tmdb');
     let metadataSource: 'tmdb' | 'omdb' | null = null;
     if (needsMetadata) {
       let tmdbError = '';
@@ -370,7 +395,6 @@ async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobS
         changed();
       }
     }
-    store.retryFailed();
     await runTasks(metadataSource);
     await refreshTop250(kind === 'refresh');
     await refreshImdbTop250(kind === 'refresh');

@@ -82,5 +82,29 @@ try {
   assert.equal(result.failures, 1);
   assert.equal(await app.evaluate(() => globalThis.hydratedCount), 2, 'a Douban network failure must not cancel independent metadata');
   assert.equal(result.running, false);
+  await app.evaluate(async ({ session }, { moduleUrl, ids }) => {
+    const require = process.getBuiltinModule('module').createRequire(moduleUrl);
+    const { Metadata } = require('./metadata.js');
+    const { Douban } = require('./douban.js');
+    Metadata.prototype.checkTmdb = async () => { throw new Error('fetch failed: fixture outage'); };
+    Metadata.prototype.checkOmdb = async () => {};
+    globalThis.quotaRequests = 0;
+    await session.fromPartition('persist:metadata').protocol.handle('https', request => {
+      if (new URL(request.url).hostname === 'query.wikidata.org') return new Response(JSON.stringify({ results: { bindings: [] } }),
+        { headers: { 'content-type': 'application/json' } });
+      globalThis.quotaRequests++;
+      return new Response(JSON.stringify({ Error: 'Request limit reached!' }), { status: 401, headers: { 'content-type': 'application/json' } });
+    });
+    Douban.prototype.findSubject = async work => ({ id: String(4000000 + work.id), titleZh: '测试电影',
+      title: '测试电影', year: 2020, rating: 8.1, votes: 10, overviewZh: '已获取中文资料。', tagsZh: ['剧情'] });
+    for (const id of ids) globalThis.fixtureStore.queueTask('tmdb', id);
+    globalThis.fixtureStore.queueTask('douban', ids[1]);
+  }, { moduleUrl: pathToFileURL(path.resolve('dist-electron/electron/main.js')).href, ids });
+  const quota = await page.evaluate(() => window.library.updateLibrary());
+  assert.equal(await app.evaluate(() => globalThis.quotaRequests), 1, 'quota exhaustion pauses OMDb for the rest of the update');
+  assert.match(quota.message, /请求额度已用尽/);
+  assert.ok(await app.evaluate(() => globalThis.fixtureStore.pendingTasks().some(task => task.type === 'tmdb')));
+  assert.equal((await page.evaluate(() => window.library.listWorks())).find(work => work.id === ids[1]).ratingDouban, 8.1,
+    'OMDb quota exhaustion leaves independent Douban work running');
   console.log('Metadata source isolation passed: verification, outages, pending retries, and independent hydration.');
 } finally { await app.close(); }

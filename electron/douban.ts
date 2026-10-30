@@ -1,6 +1,6 @@
 import { BrowserWindow, session } from 'electron';
 import type { Work } from '../src/shared.js';
-import { chooseDoubanSuggestion, doubanChineseTitle, ratingFromSearchLinks, type DoubanSearchLink, type DoubanSuggestion, type DoubanSubject } from './douban-match.js';
+import { chooseDoubanSuggestion, doubanChineseTitle, doubanTitleQueries, ratingFromSearchLinks, type DoubanSearchLink, type DoubanSuggestion, type DoubanSubject } from './douban-match.js';
 import { lookupDoubanIdByImdb } from './douban-crosswalk.js';
 import { titleQueries } from './media-titles.js';
 
@@ -124,10 +124,9 @@ export class Douban {
     // English query ("For a Few Dollars More" may be empty while "For A Few
     // Dollars More" finds the film). Include original titles as well.
     const titleCase = (value: string) => value.replace(/\b[a-z]/g, letter => letter.toUpperCase());
-    const aliases = [...new Set([work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries))];
-    const chinese = aliases.filter(title => /\p{Script=Han}/u.test(title) && !/[A-Za-z]/.test(title));
-    const queries = season === null ? [...chinese, ...aliases, ...aliases.map(titleCase)] :
-      [base, `${base} 第${numerals[season] ?? season}季`, `${work.titleEn} Season ${season}`];
+    const aliases = doubanTitleQueries(work);
+    const queries = season === null ? [...aliases, ...aliases.map(titleCase)] :
+      [...aliases.map(title => /\p{Script=Han}/u.test(title) ? `${title} 第${numerals[season] ?? season}季` : `${title} Season ${season}`), base];
     let sawSuggestions = false;
     for (const query of [...new Set(queries.map(value => value?.trim()).filter(Boolean))]) {
       let results = this.suggestions.get(query);

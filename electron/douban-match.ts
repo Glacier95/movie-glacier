@@ -1,6 +1,6 @@
 import type { Work } from '../src/shared.js';
-import { normalizeTitle } from './scanner.js';
-import { titleQueries } from './media-titles.js';
+import { normalizeTitle, mediaTitleKey } from './scanner.js';
+import { knownSeries, titleQueries } from './media-titles.js';
 
 export interface DoubanSubject { id: string; title: string; year: number | null; rating: number | null; votes: number | null;
   imdbId?: string | null; titleZh?: string; overviewZh?: string; tagsZh?: string[]; }
@@ -34,7 +34,7 @@ export function ratingFromSearchLinks(id: string, links: DoubanSearchLink[]): Do
 }
 
 function seasonNumber(title: string): number | null {
-  const match = /第\s*([一二三四五六七八九十\d]+)\s*季|season\s*(\d+)/i.exec(title);
+  const match = /第\s*([一二三四五六七八九十\d]+)\s*季|(?:season|volume|vol\.?)\s*(\d+)/i.exec(title);
   if (!match) return null;
   const token = match[1] ?? match[2] ?? '';
   if (/^\d+$/.test(token)) return Number(token);
@@ -45,18 +45,28 @@ function seasonNumber(title: string): number | null {
   return digits.indexOf(token) + 1 || null;
 }
 
+export function doubanTitleQueries(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle'>): string[] {
+  const aliases = [work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries).flatMap(title => {
+    const series = work.mediaType === 'tv' ? knownSeries(title) : null;
+    return series ? [series.titleZh, series.titleEn, title] : [title];
+  });
+  return [...new Set([...aliases.filter(title => /\p{Script=Han}/u.test(title) && !/[A-Za-z]/.test(title)), ...aliases])];
+}
+
+const withoutSeason = (title: string) => title.replace(/第\s*[一二三四五六七八九十\d]+\s*季|\b(?:season|volume|vol\.?)\s*\d+/ig, '').trim();
+
 export function chooseDoubanSuggestion(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle' | 'year'>,
   season: number | null, suggestions: DoubanSuggestion[]): DoubanSuggestion | null {
-  const titles = [work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries).map(normalizeTitle).filter(Boolean);
+  const titles = doubanTitleQueries(work).map(mediaTitleKey).filter(Boolean);
   const candidates = suggestions.filter(item => /^\d{4,12}$/.test(item.id) &&
     (season !== null || !work.year || !Number(item.year) || Math.abs(work.year - Number(item.year)) <= 1) &&
-    (season === null ? seasonNumber(item.title) === null && (work.mediaType !== 'movie' || !item.episode) : seasonNumber(item.title) === season));
+    (season === null ? seasonNumber(item.title) === null && seasonNumber(item.sub_title ?? '') === null && (work.mediaType !== 'movie' || !item.episode)
+      : (seasonNumber(item.title) ?? seasonNumber(item.sub_title ?? '')) === season));
   const titleMatches = candidates.filter(item => {
-    const names = [item.title, item.sub_title ?? ''].map(normalizeTitle).filter(Boolean);
+    const names = [item.title, item.sub_title ?? ''].map(mediaTitleKey).filter(Boolean);
     if (season !== null) {
-      const base = normalizeTitle(item.title.replace(/第\s*[一二三四五六七八九十\d]+\s*季|season\s*\d+/ig, ''));
-      return titles.some(title => title === base || title === normalizeTitle(item.sub_title ?? '') ||
-        (base.length >= 3 && title.includes(base)));
+      const names = [item.title, item.sub_title ?? ''].map(withoutSeason).map(mediaTitleKey).filter(Boolean);
+      return names.some(name => titles.includes(name));
     }
     return names.some(name => titles.some(title => title === name));
   });
@@ -64,7 +74,7 @@ export function chooseDoubanSuggestion(work: Pick<Work, 'mediaType' | 'titleZh' 
   if (titleMatches.length > 1) return titleMatches.find(item => Number(item.year) === work.year) ?? null;
   // A localized suggestion may omit its English title (e.g. A City of Sadness).
   // Only accept such a result when the query returned one candidate of the right year.
-  if (candidates.length === 1 && work.year && Number(candidates[0]?.year) === work.year) return candidates[0] ?? null;
+  if (season === null && candidates.length === 1 && work.year && Number(candidates[0]?.year) === work.year) return candidates[0] ?? null;
   return null;
 }
 

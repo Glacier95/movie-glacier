@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chooseDoubanSuggestion, doubanChineseTitle, doubanGenresFromMeta, ratingFromSearchLinks } from '../dist-electron/electron/douban-match.js';
+import { chooseDoubanSuggestion, doubanChineseTitle, doubanGenresFromMeta, doubanTitleQueries, ratingFromSearchLinks } from '../dist-electron/electron/douban-match.js';
 
 test('suggestions identify films by title and year without confusing a series', () => {
   const work = { mediaType: 'movie', titleZh: '双峰：与火同行', titleEn: 'Twin Peaks: Fire Walk with Me', originalTitle: 'Twin Peaks: Fire Walk with Me', year: 1992 };
@@ -45,6 +45,21 @@ test('Douban matches bilingual release names and explicit AKA aliases without sh
     { id: '1299436', title: '风柜来的人', sub_title: 'The Boys from Fengkuei', year: '1983' },
     { id: '1234567', title: 'Other film', year: '1983' }
   ])?.id, '1299436');
+});
+
+test('English-only series match localized seasons and volumes regardless of premiere year', () => {
+  const work = { mediaType: 'tv', titleZh: 'Love Death and Robots', titleEn: 'Love, Death & Robots', originalTitle: 'Love Death and Robots', year: 2019 };
+  assert.equal(doubanTitleQueries(work)[0], '爱，死亡和机器人');
+  const results = [
+    { id: '3000001', title: '爱，死亡和机器人 第一季', sub_title: 'Love, Death & Robots', year: '2019', episode: '18' },
+    { id: '3000003', title: '爱，死亡和机器人 第三季', sub_title: 'Love, Death & Robots Volume 3', year: '2022', episode: '9' },
+    { id: '3000004', title: '爱，死亡和机器人 第四季', sub_title: 'Love, Death & Robots Volume 4', year: '2025', episode: '10' },
+    { id: '3000005', title: 'Other series 第三季', sub_title: 'Other series Season 3', year: '2022' }
+  ];
+  assert.equal(chooseDoubanSuggestion(work, null, results), null);
+  for (const season of [1, 3, 4]) assert.equal(chooseDoubanSuggestion(work, season, results)?.id, `300000${season}`);
+  assert.equal(chooseDoubanSuggestion(work, 2, results), null);
+  assert.equal(chooseDoubanSuggestion(work, 3, [results[3]]), null);
 });
 
 test('search page fallback reads Chinese title, genres and rating only from the selected ID', () => {

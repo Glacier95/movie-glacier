@@ -3,7 +3,7 @@ export function knownSeries(title: string): { titleZh: string; titleEn: string; 
   const compact = title.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, '');
   if (/^(?:请回答1988|reply1988|응답하라1988)$/.test(compact))
     return { titleZh: '请回答1988', titleEn: 'Reply 1988', season: null };
-  const robots = /^(?:爱死亡和机器人|爱死亡机器人|lovedeathandrobots|lovedeathrobots)([1-9]\d?)?$/.exec(compact);
+  const robots = /^(?:(?:爱死亡和机器人|爱死亡机器人|爱死机)(?:lovedeathandrobots|lovedeathrobots)?|lovedeathandrobots|lovedeathrobots)([1-9]\d?)?$/.exec(compact);
   return robots ? { titleZh: '爱，死亡和机器人', titleEn: 'Love, Death & Robots', season: Number(robots[1]) || null } : null;
 }
 

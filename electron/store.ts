@@ -186,6 +186,31 @@ export class Store {
     this.run('UPDATE assets SET workId=? WHERE workId=?', [toWork, fromWork]);
     this.run('UPDATE works SET matchState=? WHERE id=?', ['ignored', fromWork]);
   }
+  mergeSeries(fromId: number, toId: number): void {
+    const from = this.work(fromId), to = this.work(toId);
+    if (!from || !to || fromId === toId || from.mediaType !== 'tv' || to.mediaType !== 'tv' ||
+      from.matchState === 'manual' || to.matchState === 'manual' || this.hasManualFields(fromId) || this.hasManualFields(toId))
+      throw new Error('剧集合并条件不符');
+    const fields = ['tmdbId', 'imdbId', 'doubanId', 'year', 'overview', 'poster', 'backdrop', 'doubanTitleZh', 'doubanOverviewZh', 'ratingImdb', 'doubanVotes'] as const;
+    this.db.run('BEGIN');
+    try {
+      for (const key of fields) if (!to[key] && from[key]) this.db.run(`UPDATE works SET ${key}=? WHERE id=?`, [from[key]!, toId]);
+      for (const key of ['genres', 'countries', 'directors', 'creators', 'writers', 'actors', 'doubanTags'] as const)
+        if (!to[key].length && from[key].length) this.db.run(`UPDATE works SET ${key}=? WHERE id=?`, [JSON.stringify(from[key]), toId]);
+      this.db.run('UPDATE works SET favorite=? WHERE id=?', [Number(to.favorite || from.favorite), toId]);
+      this.db.run(`INSERT INTO ratings(workId,source,season,score,votes,sourceId,fetchedAt)
+        SELECT ?,r.source,r.season,r.score,r.votes,r.sourceId,r.fetchedAt FROM ratings r WHERE r.workId=?
+        AND NOT EXISTS(SELECT 1 FROM ratings kept WHERE kept.workId=? AND kept.source=r.source AND kept.season IS r.season)`, [toId, fromId, toId]);
+      this.db.run(`UPDATE works SET ratingDouban=(SELECT score FROM ratings WHERE workId=? AND source='douban'
+        ORDER BY season IS NOT NULL,season DESC LIMIT 1),ratingSeason=(SELECT season FROM ratings WHERE workId=? AND source='douban'
+        ORDER BY season IS NOT NULL,season DESC LIMIT 1) WHERE id=? AND EXISTS(SELECT 1 FROM ratings WHERE workId=? AND source='douban')`, [toId, toId, toId, toId]);
+      this.db.run('UPDATE assets SET workId=? WHERE workId=?', [toId, fromId]);
+      this.db.run("UPDATE tasks SET status='skipped',error='已归并到同一剧集' WHERE workId=? AND status IN ('pending','running','failed')", [fromId]);
+      this.db.run("UPDATE works SET matchState='ignored' WHERE id=?", [fromId]);
+      this.db.run('COMMIT');
+    } catch (error) { this.db.run('ROLLBACK'); throw error; }
+    this.save();
+  }
   hasManualFields(id: number): boolean {
     return Boolean(this.one('SELECT workId FROM work_edits WHERE workId=?', [id]));
   }
@@ -325,7 +350,7 @@ export class Store {
         COALESCE(NULLIF(works.titleZh,''),NULLIF(works.titleEn,''),works.originalTitle,'未知影片') AS title,
         latest.source,latest.status,latest.message,latest.updatedAt
       FROM latest JOIN works ON works.id=latest.workId
-      WHERE latest.position=1 ORDER BY latest.updatedAt DESC,latest.id DESC LIMIT 600`)
+      WHERE latest.position=1 AND works.matchState!='ignored' ORDER BY latest.updatedAt DESC,latest.id DESC LIMIT 600`)
       .map(row => ({ ...row, source: row.source === 'imdb' ? 'omdb' : row.source }) as unknown as ScrapeLog);
   }
   recordSourceRefresh(workId: number, source: ScrapeLog['source'], error?: string, note = ''): void {
@@ -347,6 +372,16 @@ export class Store {
     this.run('UPDATE tasks SET status=?,error=?,updatedAt=? WHERE id=?', ['skipped', reason, Date.now(), id]);
     this.recordTask(id);
   }
-  retryFailed(): void { this.run('UPDATE tasks SET status=?,error=NULL,updatedAt=? WHERE status=?', ['pending', Date.now(), 'failed']); }
+  retryFailed(): void {
+    // Retire an old failed attempt once the same provider has succeeded later.
+    this.run(`UPDATE tasks SET status='skipped' WHERE status='failed' AND EXISTS(
+      SELECT 1 FROM task_history h WHERE h.workId=tasks.workId AND h.status='done' AND h.updatedAt>=tasks.updatedAt
+      AND (h.source=tasks.type OR (tasks.type IN ('tmdb','imdb') AND h.source='omdb'))) `);
+    const failed = this.listScrapeLogs().filter(log => log.status === 'failed');
+    this.run(`UPDATE tasks SET status='pending',error=NULL,updatedAt=? WHERE status='failed' AND EXISTS(
+      SELECT 1 FROM works WHERE works.id=tasks.workId AND works.matchState!='ignored')`, [Date.now()]);
+    // Manual source refreshes have history entries but may have no queued task.
+    for (const log of failed) this.queueTask(log.source === 'douban' ? 'douban' : 'tmdb', log.workId);
+  }
   close(): void { this.save(); this.db.close(); }
 }
