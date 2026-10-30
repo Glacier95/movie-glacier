@@ -9,6 +9,9 @@ export interface OmdbCandidate {
   Type?: string;
 }
 
+export const omdbQuotaMessage = 'OMDb 请求额度已用尽；已暂停本轮 OMDb 抓取，请在额度恢复后重试';
+export const omdbQuotaReached = (value: string) => /request limit reached|daily (?:request )?limit|quota (?:exceeded|reached)/i.test(value);
+
 export function omdbYear(value: string | undefined): number | null {
   return Number(/\b(?:19|20)\d{2}\b/.exec(value ?? '')?.[0]) || null;
 }

@@ -29,6 +29,9 @@ const brokenId = store.createWork('tv', '爱死亡', 2022);
 store.setWorkFields(brokenId, { matchState: 'matched', tmdbId: 123, imdbId: 'tt9999999' });
 store.setFavorite(brokenId, true);
 const thirdAsset = add(brokenId, '爱死亡和机器人3/第01集.mkv');
+const duplicateId = store.createWork('tv', 'Love Death and Robots', null);
+const fourthAsset = add(duplicateId, 'Love.Death.and.Robots/Volume 4/E01.mkv');
+store.setFavorite(duplicateId, true);
 const manualId = store.createWork('movie', '手动确认的条目', 2000);
 add(manualId, 'Reply.1988.S01E02.2015.mkv');
 store.setManualFields(manualId, { titleZh: '手动确认的条目' });
@@ -39,9 +42,9 @@ try {
     args: ['--no-sandbox', '--disable-gpu', ...(process.env.FILM_LIBRARY_PACKAGED === '1' ? [] : ['.'])], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' }, timeout: 30000 });
   const page = await app.firstWindow();
   await page.locator('.brand').waitFor({ timeout: 20000 });
-  await page.evaluate(() => window.library.updateLibrary());
+  await page.evaluate(() => window.library.retryFailed());
   let works = await page.evaluate(() => window.library.listWorks());
-  assert.equal(works.find(work => work.id === replyId).mediaType, 'movie', 'incremental scan retains old data until explicit rescan');
+  assert.equal(works.find(work => work.id === replyId).mediaType, 'tv', 'retry automatically repairs legacy identification');
   await page.evaluate(() => window.library.rescanLibrary());
   works = await page.evaluate(() => window.library.listWorks());
   const reply = works.find(work => work.id === replyId);
@@ -50,14 +53,16 @@ try {
   assert.equal(reply.assets[0].episode, 1);
   assert.equal(reply.assets[0].id, replyAsset);
   const robots = works.find(work => work.id === robotsId);
-  assert.equal(robots.assets.length, 2);
-  assert.deepEqual(robots.assets.map(asset => asset.season).sort(), [1, 3]);
+  assert.equal(robots.assets.length, 3);
+  assert.deepEqual(robots.assets.map(asset => asset.season).sort(), [1, 3, 4]);
   assert.equal(robots.assets.find(asset => asset.season === 3).id, thirdAsset);
+  assert.equal(robots.assets.find(asset => asset.season === 4).id, fourthAsset);
   assert.equal(robots.favorite, true);
   assert.equal(works.some(work => work.id === brokenId), false);
+  assert.equal(works.some(work => work.id === duplicateId), false);
   assert.equal(works.find(work => work.id === manualId).mediaType, 'movie');
   await page.evaluate(() => window.library.rescanLibrary());
   assert.equal((await page.evaluate(() => window.library.listWorks())).length, 3, 'repeat rescan is stable');
-  console.log(JSON.stringify({ repairedReply1988: true, mergedRobotSeasons: [1, 3], favoritePreserved: true,
+  console.log(JSON.stringify({ repairedReply1988: true, mergedRobotSeasons: [1, 3, 4], favoritePreserved: true,
     manualEditsPreserved: true, stableRepeatRescan: true, dataDirectory: data }));
 } finally { if (app) await app.close(); }

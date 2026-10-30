@@ -1,5 +1,7 @@
 // English UI copy; Chinese source text remains the default.
 export const english: Record<string, string> = {
+  "OMDb 请求额度已用尽；已暂停本轮 OMDb 抓取，请在额度恢复后重试": "OMDb request quota reached. OMDb fetching is paused for this update; retry when quota is available.",
+  "第 {0} 季暂未匹配": "Season {0} is not matched yet",
   "私人放映室": "YOUR OWN CINEMA",
   "好电影，值得慢慢收藏。": "A home for the films you love.",
   "全屏（⌃⌘F）": "Full screen (⌃⌘F)",

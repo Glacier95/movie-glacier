@@ -38,7 +38,9 @@ function parsePart(raw: string): ParsedName {
   raw = raw.normalize('NFKC');
   const pair = /(?:^|[. _\-\[\]])S(\d{1,2})[. _-]*E(\d{1,3})(?=$|[^\d])/i.exec(raw)
     ?? /(?:^|[. _-])(\d{1,2})x(\d{1,3})(?=$|[^\d])/i.exec(raw);
-  const seasonMatch = /第\s*([零一二三四五六七八九十\d]+)\s*季|(?:^|[. _-])(?:S|Season[. _-]*)(\d{1,2})(?=$|[^\d])/i.exec(raw);
+  const volumeMatch = /(?:^|[. _-])Vol(?:ume)?[. _-]*(\d{1,2})(?=$|[^\d])/i.exec(raw);
+  const seasonMatch = /第\s*([零一二三四五六七八九十\d]+)\s*季|(?:^|[. _-])(?:S|Season[. _-]*)(\d{1,2})(?=$|[^\d])/i.exec(raw)
+    ?? (volumeMatch && knownSeries(raw.slice(0, volumeMatch.index)) ? volumeMatch : null);
   const episodeMatch = /第\s*([零一二三四五六七八九十\d]+)\s*集|(?:^|[. _-])(?:EP?|Episode[. _-]*)(\d{1,3})(?=$|[^\d])/i.exec(raw);
   // A release year needs a delimiter and a title before it. Numeric titles stay intact.
   const yearMatch = [...raw.matchAll(/(?:^|[. _\-([【])((?:19|20)\d{2})(?=$|[. _\-)\]】])/g)]
@@ -75,6 +77,8 @@ export function parseName(sourcePath: string, kind: 'file' | 'bdmv'): ParsedName
   let folder = path.dirname(sourcePath);
   let folderSeason: number | null = null;
   for (let depth = 0; depth < 3 && path.dirname(folder) !== folder; depth++, folder = path.dirname(folder)) {
+    const volume = /^Vol(?:ume)?[. _-]*(\d{1,2})$/i.exec(path.basename(folder));
+    if (volume) { folderSeason ??= Number(volume[1]); continue; }
     const parent = parsePart(path.basename(folder));
     if (parent.mediaType !== 'tv') continue;
     folderSeason ??= parent.season;

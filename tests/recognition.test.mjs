@@ -7,7 +7,7 @@ import { parseName, findNfoId } from '../dist-electron/electron/scanner.js';
 import { titleQueries } from '../dist-electron/electron/media-titles.js';
 import { chooseTmdbCandidate } from '../dist-electron/electron/tmdb-match.js';
 import { lookupYear, omdbQueries, checkOmdbYear } from '../dist-electron/electron/omdb.js';
-import { localWorkMatches, repairParsedWork } from '../dist-electron/electron/local-match.js';
+import { localWorkMatches, repairParsedWork, reconcileSeries } from '../dist-electron/electron/local-match.js';
 import { Store } from '../dist-electron/electron/store.js';
 
 const parse = name => parseName(path.join('D:', 'media', name), 'file');
@@ -46,6 +46,9 @@ test('Chinese seasons, episode-only filenames and known numbered series share a 
   assert.equal(parse('Toy.Story.3.2010.mkv').mediaType, 'movie', 'ordinary sequels remain films');
   assert.equal(parse('Some.Show.1x02.2015.mkv').episode, 2);
   assert.equal(parse('Some.Show.S02/Some.Show.S03E01.mkv').season, 3, 'explicit filename season takes precedence over folder');
+  for (const name of ['Love.Death.and.Robots/Volume.4/E01.mkv', 'Love.Death.and.Robots.Volume.4.2025.E01.mkv', '爱死机4/01.mkv'])
+    assert.deepEqual([parse(name).normalizedTitle, parse(name).season, parse(name).episode], ['love death robots', 4, 1], name);
+  assert.equal(parse('Kill.Bill.Vol.1.2003.mkv').mediaType, 'movie');
 });
 
 test('TMDB never accepts a shorter title just because its year matches', () => {
@@ -131,4 +134,48 @@ test('rescan repairs automatic series classifications and preserves manual edits
 
 test('TMDB does not accept an undated candidate for a known release year', () => {
   assert.equal(chooseTmdbCandidate('Home', 2020, [{ id: 1, title: 'Home', originalTitle: 'Home', year: null, posterPath: null }]), null);
+});
+
+test('legacy canonical series entries merge on retry while preserving assets, favorite, season ratings and manual boundaries', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'series-reconcile-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const store = await Store.open(path.join(dir, 'library.sqlite'), path.resolve('dist-electron/sql-wasm.wasm'), {
+    isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => ''
+  });
+  const add = (id, name, season) => {
+    const file = path.join(dir, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'fixture');
+    store.putAsset({ workId: id, root: dir, path: file, kind: 'file', season, episode: 1, size: 7, mtimeMs: 1 }, 1);
+    return store.findAsset(file).id;
+  };
+  const kept = store.createWork('tv', 'Love, Death & Robots', 2019);
+  store.setWorkFields(kept, { imdbId: 'tt1000001', matchState: 'matched', poster: 'series-poster.png' });
+  const firstAsset = add(kept, 'Love.Death.and.Robots.S01E01.2019.mkv', 1);
+  store.setRating(kept, 'douban', 1, 9.2, 10, '3000001');
+  const duplicate = store.createWork('tv', 'Love Death and Robots', null);
+  const fourthAsset = add(duplicate, 'Love.Death.and.Robots/Volume 4/E01.mkv', null);
+  store.setFavorite(duplicate, true);
+  store.setRating(duplicate, 'douban', 4, 8.1, 10, '3000004');
+  store.recordSourceRefresh(duplicate, 'douban', '旧分季匹配失败');
+  const manual = store.createWork('tv', 'Custom series', 2019);
+  add(manual, 'manual/Love.Death.and.Robots.S03E01.mkv', 3);
+  store.setManualFields(manual, { titleZh: '我手动确认的剧集' });
+  const conflict = store.createWork('tv', 'Love Death and Robots', 2019);
+  add(conflict, 'conflict/Love.Death.and.Robots.S02E01.mkv', 2);
+  store.setWorkFields(conflict, { imdbId: 'tt2000001', matchState: 'matched' });
+  reconcileSeries(store);
+  assert.equal(store.work(duplicate), null);
+  const series = store.work(kept);
+  assert.equal(series.poster, 'series-poster.png');
+  assert.equal(series.favorite, true);
+  assert.deepEqual(series.assets.map(asset => asset.id).sort(), [firstAsset, fourthAsset].sort());
+  assert.deepEqual(series.assets.map(asset => asset.season).sort(), [1, 4]);
+  assert.equal(series.ratingSeason, 4);
+  assert.equal(series.ratingDouban, 8.1);
+  assert.equal(store.all('SELECT * FROM ratings WHERE workId=?', [kept]).length, 2);
+  assert.equal(store.work(manual).titleZh, '我手动确认的剧集');
+  assert.ok(store.work(conflict), 'conflicting source identities require review');
+  assert.equal(store.listScrapeLogs().some(log => log.workId === duplicate), false);
+  reconcileSeries(store);
+  assert.equal(store.work(kept).assets.length, 2, 'repeat repairs are stable');
+  store.close();
 });

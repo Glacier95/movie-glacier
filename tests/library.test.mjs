@@ -114,6 +114,8 @@ test('SQLite store persists assets, metadata, ratings, and atomic Top250 snapsho
   assert.deepEqual([store.work(seriesId).ratingDouban, store.work(seriesId).ratingSeason], [8.9, 3]);
   store.setRating(seriesId, 'douban', null, 9.0, 500, 'whole-series');
   assert.deepEqual([store.work(seriesId).ratingDouban, store.work(seriesId).ratingSeason], [9.0, null]);
+  store.setRating(seriesId, 'douban', 3, 8.8, 120, 'season-3');
+  assert.deepEqual([store.work(seriesId).ratingDouban, store.work(seriesId).ratingSeason], [9.0, null], 'a distinct whole-series entry keeps its score');
   store.ignoreWork(workId);
   assert.equal(store.listWorks().some(work => work.id === workId), false);
   assert.equal(store.ignoredWorks()[0].id, workId);
@@ -179,6 +181,30 @@ test('IMDb Top 250 migrates old libraries, links IDs, persists and retains compl
   assert.equal(store.work(id).imdbTopRank, 1, 'metadata ID updates link to existing chart');
   store.repairWorkFromName(id, { mediaType: 'movie', title: 'Other film', year: 2000 });
   assert.equal(store.work(id).imdbTopRank, null, 'reidentification clears stale rankings');
+  store.close();
+});
+
+test('retry recovers history-only failures without reviving superseded successful work', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'retry-history-'));
+  t.after(() => { if (root.startsWith(os.tmpdir())) fs.rmSync(root, { recursive: true, force: true }); });
+  const store = await Store.open(path.join(root, 'library.sqlite'), wasm, secretStorage);
+  const id = store.createWork('movie', 'Recovered film', 1986);
+  store.putAsset({ workId: id, root, path: path.join(root, 'Recovered.1986.mkv'), kind: 'file', season: null, episode: null, size: 1, mtimeMs: 1 }, 1);
+  store.queueTask('tmdb', id);
+  const first = store.pendingTasks()[0].id;
+  store.taskDone(first, '旧年份匹配失败', '', 'omdb');
+  store.queueTask('tmdb', id);
+  store.taskDone(store.pendingTasks()[0].id, undefined, '已按确认编号成功', 'omdb');
+  store.retryFailed();
+  assert.equal(store.hasFailedTasks('tmdb'), false);
+  assert.equal(store.pendingTasks().length, 0, 'resolved attempts are not retried on every scan');
+  store.recordSourceRefresh(id, 'omdb', '手动刷新失败');
+  store.retryFailed();
+  assert.deepEqual(store.pendingTasks().map(task => task.type), ['tmdb'], 'history-only failures receive a real retry task');
+  store.retryFailed();
+  assert.equal(store.pendingTasks().length, 1, 'retry does not duplicate pending work');
+  store.ignoreWork(id);
+  assert.equal(store.listScrapeLogs().length, 0);
   store.close();
 });
 

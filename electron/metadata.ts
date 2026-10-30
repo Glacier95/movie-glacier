@@ -5,7 +5,7 @@ import { session, type Session } from 'electron';
 import type { ConnectionChecks, MatchCandidate, MediaType, Person, Work } from '../src/shared.js';
 import { titleQueries } from './media-titles.js';
 import { tmdbScore, chooseTmdbCandidate } from './tmdb-match.js';
-import { searchOmdbCandidate, lookupYear, omdbChineseTitle, omdbPeople, omdbYear,
+import { searchOmdbCandidate, lookupYear, omdbChineseTitle, omdbPeople, omdbYear, omdbQuotaMessage, omdbQuotaReached,
   safeOmdbPoster, checkOmdbYear, type OmdbCandidate } from './omdb.js';
 import { Store } from './store.js';
 
@@ -46,6 +46,7 @@ async function request(network: Session, url: string, label: string, headers: Re
         const body = await response.json() as { Error?: string; status_message?: string };
         reason = String(body.Error ?? body.status_message ?? '').slice(0, 120);
       } catch { /* Some API errors have no JSON body. */ }
+      if (label === 'OMDb' && omdbQuotaReached(reason)) throw new Error(omdbQuotaMessage);
       throw new Error(`${label} 凭据被拒绝（HTTP ${response.status}）${reason ? `：${reason}` : ''}`);
     }
     throw new Error(`${label} 返回 HTTP ${response.status}`);
@@ -162,7 +163,9 @@ export class Metadata {
     const url = new URL('https://www.omdbapi.com/');
     url.searchParams.set('apikey', key);
     for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-    return json(this.network, url.toString(), 'OMDb');
+    const data = await json(this.network, url.toString(), 'OMDb');
+    if (data.Response === 'False' && omdbQuotaReached(String(data.Error ?? ''))) throw new Error(omdbQuotaMessage);
+    return data;
   }
 
   private async omdbCandidate(work: Work): Promise<OmdbCandidate | null> {
@@ -337,13 +340,8 @@ export class Metadata {
 
   async refreshImdb(workId: number): Promise<boolean> {
     const work = this.store.work(workId);
-    const key = this.store.getSecret('omdb');
     if (!work?.imdbId) return false;
-    if (!key) throw new Error('请先在设置中填写 OMDb API Key');
-    const url = new URL('https://www.omdbapi.com/');
-    url.searchParams.set('apikey', key);
-    url.searchParams.set('i', work.imdbId);
-    const data = await json(this.network, url.toString(), 'OMDb');
+    const data = await this.omdb({ i: work.imdbId });
     const score = Number(data.imdbRating);
     if (data.Response === 'False') throw new Error(`OMDb：${data.Error ?? '无结果'}`);
     if (!Number.isFinite(score)) return false;
