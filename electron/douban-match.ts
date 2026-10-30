@@ -12,7 +12,7 @@ const chineseGenres = new Set(['剧情','喜剧','动作','爱情','科幻','动
 
 export function doubanChineseTitle(value: string): string {
   const title = value.replace(/[\u200e\u200f]/g, '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim();
-  return title.match(/^[\p{Script=Han}·：:！？!？、，,。\s]+/u)?.[0]?.trim() || title;
+  return title.match(/^[\p{Script=Han}\d·：:！？!？、，,。\s]+/u)?.[0]?.trim() || title;
 }
 
 export function doubanGenresFromMeta(meta: string): string[] {
@@ -49,11 +49,35 @@ export function doubanTitleQueries(work: Pick<Work, 'mediaType' | 'titleZh' | 't
   const aliases = [work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries).flatMap(title => {
     const series = work.mediaType === 'tv' ? knownSeries(title) : null;
     return series ? [series.titleZh, series.titleEn, title] : [title];
-  });
+  }).map(title => work.mediaType === 'tv' ? doubanSeriesTitle(title) : title);
   return [...new Set([...aliases.filter(title => /\p{Script=Han}/u.test(title) && !/[A-Za-z]/.test(title)), ...aliases])];
 }
 
-const withoutSeason = (title: string) => title.replace(/第\s*[一二三四五六七八九十\d]+\s*季|\b(?:season|volume|vol\.?)\s*\d+/ig, '').trim();
+export const doubanSeriesTitle = (title: string) => title.replace(/第\s*[一二三四五六七八九十\d]+\s*季|\b(?:season|volume|vol\.?)\s*\d+/ig, '').trim();
+
+export function doubanSearchQueries(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle'>, season: number | null): string[] {
+  const numerals = ['零','一','二','三','四','五','六','七','八','九','十'];
+  const aliases = doubanTitleQueries(work);
+  const queries = season === null ? [...aliases, ...aliases.map(value => value.replace(/\b[a-z]/g, letter => letter.toUpperCase()))] :
+    aliases.flatMap(title => /\p{Script=Han}/u.test(title)
+      ? [`${title}第${numerals[season] ?? season}季`, title, `${title} 第${numerals[season] ?? season}季`]
+      : [`${title} Season ${season}`, title]);
+  return [...new Set(queries.map(value => value.trim()).filter(Boolean))];
+}
+
+// Learn localized aliases only from a suggestion whose complete series title agrees.
+export function doubanLocalizedSeriesAliases(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle'>, results: DoubanSuggestion[]): string[] {
+  if (work.mediaType !== 'tv') return [];
+  const names = doubanTitleQueries(work).map(mediaTitleKey);
+  return [...new Set(results.filter(item => [item.title, item.sub_title ?? ''].some(title => names.includes(mediaTitleKey(doubanSeriesTitle(title)))))
+    .map(item => doubanSeriesTitle(item.title)).filter(title => /\p{Script=Han}/u.test(title) && !/[A-Za-z]/.test(title)))];
+}
+
+export function doubanSeasonSubjectMatches(match: DoubanSuggestion, subject: DoubanSubject, season: number): boolean {
+  if (subject.id !== match.id || (seasonNumber(match.title) ?? seasonNumber(match.sub_title ?? '')) !== season) return false;
+  const names = [match.title, match.sub_title ?? ''].map(doubanSeriesTitle).map(mediaTitleKey).filter(Boolean);
+  return [subject.titleZh ?? '', subject.title].some(title => seasonNumber(title) === season && names.includes(mediaTitleKey(doubanSeriesTitle(title))));
+}
 
 export function chooseDoubanSuggestion(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle' | 'year'>,
   season: number | null, suggestions: DoubanSuggestion[]): DoubanSuggestion | null {
@@ -65,7 +89,7 @@ export function chooseDoubanSuggestion(work: Pick<Work, 'mediaType' | 'titleZh' 
   const titleMatches = candidates.filter(item => {
     const names = [item.title, item.sub_title ?? ''].map(mediaTitleKey).filter(Boolean);
     if (season !== null) {
-      const names = [item.title, item.sub_title ?? ''].map(withoutSeason).map(mediaTitleKey).filter(Boolean);
+      const names = [item.title, item.sub_title ?? ''].map(doubanSeriesTitle).map(mediaTitleKey).filter(Boolean);
       return names.some(name => titles.includes(name));
     }
     return names.some(name => titles.some(title => title === name));

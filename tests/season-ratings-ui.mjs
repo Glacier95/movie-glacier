@@ -25,6 +25,17 @@ store.setWorkFields(single, { titleEn: 'Reply 1988', matchState: 'matched' });
 const singleFile = path.join(media, 'Reply.1988.S01E01.2015.mkv'); fs.writeFileSync(singleFile, 'fixture');
 store.putAsset({ workId: single, root: media, path: singleFile, kind: 'file', season: 1, episode: 1, size: 7, mtimeMs: 1 }, 1);
 store.setRating(single, 'douban', null, 9.7, 100, '4000001');
+const films = [
+  { zh: '重庆森林', traditional: '重慶森林', original: '重慶森林', primary: '重庆森林' },
+  { zh: '海滩的一天', traditional: '海灘的一天', original: '海灘的一天', primary: '海滩的一天' },
+  { zh: '情书', traditional: '情書', original: 'Love Letter', primary: 'Love Letter' }
+];
+for (const film of films) {
+  const movie = store.createWork('movie', film.zh, 1994);
+  store.setWorkFields(movie, { titleEn: film.traditional, originalTitle: film.original, doubanTitleZh: film.zh, matchState: 'matched' });
+  const file = path.join(media, `${film.primary}.mkv`); fs.writeFileSync(file, 'fixture');
+  store.putAsset({ workId: movie, root: media, path: file, kind: 'file', season: null, episode: null, size: 7, mtimeMs: 1 }, 1);
+}
 store.setRoots([media]); store.close();
 const packaged = process.env.FILM_LIBRARY_PACKAGED === '1';
 const launch = () => electron.launch({ executablePath: electronExecutable(), args: ['--no-sandbox', '--disable-gpu', ...(packaged ? [] : ['.'])],
@@ -35,6 +46,17 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const errors = []; page.on('pageerror', error => errors.push(String(error)));
   await page.locator('.brand').waitFor();
+  for (const film of films) {
+    const card = page.locator('.poster-card').filter({ has: page.getByRole('button', { name: `查看《${film.zh}》详情`, exact: true }) });
+    assert.equal(await card.locator('.poster-title').innerText(), film.primary);
+    assert.ok(!(await card.locator('.poster-subtitle').innerText()).includes(film.traditional));
+    await card.getByRole('button', { name: `查看《${film.zh}》详情`, exact: true }).click();
+    await page.locator('.hero h1').waitFor();
+    assert.equal(await page.locator('.hero h1').innerText(), film.primary);
+    if (film.primary === film.zh) assert.equal(await page.locator('.hero-original').count(), 0);
+    else assert.equal(await page.locator('.hero-original').innerText(), film.zh);
+    await page.getByRole('button', { name: '返回片库', exact: true }).click();
+  }
   const openSeries = async title => {
     await page.locator('.main-tabs button').nth(1).click();
     await page.getByRole('button', { name: title, exact: true }).click();
@@ -76,5 +98,5 @@ try {
   await page.getByRole('button', { name: 'View details for Reply 1988', exact: true }).click();
   assert.match(await page.locator('#season-1 .season-heading-ratings').innerText(), /Overall series.*9\.7/s,
     'a single-season show labels an overall-source fallback explicitly');
-  console.log('Season ratings UI passed: independent per-season scores, missing states, overall-source labels, anchor links, mobile layout, English and restart persistence.');
+  console.log('Titles and season ratings UI passed: simplified/traditional Chinese shown once, real English title preferred; independent season scores, missing states, mobile, English and persistence.');
 } finally { await app?.close(); }

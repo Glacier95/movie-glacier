@@ -44,6 +44,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **0.7.4** | 避免简繁中文片名重复显示；通过中文别名、连写季名和分季校验补抓后续季评分，更新库时重试缺失的分季评分。 | Avoid duplicate Chinese titles across script variants; discover localized season aliases, validate season pages and retry missing season ratings on library updates. |
 | **0.7.3** | 修复重复年份导致的剧集片名识别；将《请回答1988》20 集正片与 SP 特别篇归入同一剧集，并修复已有错误条目。 | Fix episode titles containing repeated release years; group all 20 Reply 1988 episodes and its SP special under one series and repair existing misclassified entries. |
 | **0.7.2** | 剧集详情按季展示评分；恢复经典导航并精简页标题；修复《请回答1988》导演剪辑版目录识别。 | Show per-season ratings, restore classic navigation and simplify page headings, and recognize bilingual Reply 1988 director's-cut folders. |
 | **0.7.1** | 自动修复并归并旧剧集条目，完善英文剧名的豆瓣分季匹配、历史失败重试和 OMDb 配额提示。 | Repair and merge legacy series entries, improve localized season matching and historical retries, and pause OMDb when its quota is exhausted. |
