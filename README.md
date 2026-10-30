@@ -11,6 +11,7 @@ A Windows desktop library for your local movies and series. Browse posters, expl
 - **影视整理 / Library management**：多目录扫描、电影与剧集识别、蓝光目录及同片多版本。Scan multiple folders, recognize movies and episodes, and manage Blu-ray folders and alternate versions.
 - **海报浏览 / Poster browsing**：搜索、筛选、排序、收藏和资料手动修正。Search, filter, sort, save favorites, and correct metadata.
 - **资料与评分 / Metadata and ratings**：支持 TMDB、OMDb、豆瓣资料及 IMDb／豆瓣评分。Supports metadata from TMDB, OMDb, and Douban, with IMDb and Douban ratings.
+- **双榜单 / Top 250 charts**：豆瓣与 IMDb Top 250 独立筛选、详情排名及片库统计；更新库时每七天刷新，刷新全部资料可强制更新，访问失败保留完整缓存。Filter by Douban and IMDb Top 250, view ranks and collection counts. Charts refresh weekly during library updates or on a full metadata refresh; failed requests preserve the last complete chart.
 - **片库概览 / Collection overview**：交互图表展示类型、年代、地区、评分与演职员统计。Explore genres, years, regions, ratings, and director/cast statistics through interactive charts.
 - **界面与播放 / Appearance and playback**：中英文界面、可调海报背景和毛玻璃效果，调用 PotPlayer 播放。Chinese and English interfaces, adjustable poster backgrounds and glass effects, and playback through PotPlayer.
 
@@ -42,6 +43,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **0.6.8** | 新增 IMDb Top 250 筛选、排名与统计，更新默认玻璃及海报效果。 | Add IMDb Top 250 filters, ranks and statistics; refresh default glass and poster effects. |
 | **0.6.7** | 演职员榜单改为 Top 10，修复明细展开收起导致页面变长。 | Top 10 director/cast rankings; fix layout growth when toggling details. |
 | **0.6.6** | 返回片库恢复浏览位置，增加细分评分区间与统计摘要。 | Restore browsing position; add finer rating bins and summary statistics. |
 | **0.6.5** | 修复数字片名、季集与年份匹配，完善重扫纠错和 NFO 读取。 | Improve numeric titles, episode/year matching, rescan repairs, and NFO handling. |

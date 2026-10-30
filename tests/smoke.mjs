@@ -35,7 +35,7 @@ try {
   assert.equal(await page.getByText('YOUR PRIVATE COLLECTION').count(), 0);
   assert.equal(await page.getByText('从你的收藏中，找到今晚的电影。').count(), 0);
   assert.equal(await page.evaluate(() => typeof window.library), 'object');
-  assert.equal((await page.evaluate(() => window.library.getSettings())).backgroundBlur, 10);
+  assert.equal((await page.evaluate(() => window.library.getSettings())).backgroundBlur, 5);
   await assert.rejects(page.evaluate(() => window.library.setSettings({ backgroundBlur: 51 })), /背景模糊程度/);
   await page.getByRole('banner').getByRole('button', { name: '设置' }).click();
   let settingsDialog = page.getByRole('dialog', { name: '设置' });
@@ -44,7 +44,7 @@ try {
   await page.keyboard.press('Home');
   assert.match(await page.locator('.app-shell').getAttribute('style'), /--ambient-blur: 0px/, 'blur can be previewed without saving');
   await settingsDialog.getByRole('button', { name: '取消' }).click();
-  assert.match(await page.locator('.app-shell').getAttribute('style'), /--ambient-blur: 10px/, 'cancel restores the saved blur');
+  assert.match(await page.locator('.app-shell').getAttribute('style'), /--ambient-blur: 5px/, 'cancel restores the saved blur');
   await page.getByRole('banner').getByRole('button', { name: '设置' }).click();
   settingsDialog = page.getByRole('dialog', { name: '设置' });
   await settingsDialog.getByRole('slider', { name: '背景模糊程度' }).focus();

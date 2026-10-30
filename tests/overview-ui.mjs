@@ -33,7 +33,7 @@ try {
   assert.equal(await page.getByRole('banner').getByRole('button', { name: /更新库|抓取日志/ }).count(), 0);
   assert.equal(await page.locator('.poster-rank').count(), 0);
   await page.getByRole('button', { name: /排序：/ }).click();
-  assert.match(await page.getByRole('listbox').evaluate(el => getComputedStyle(el).backgroundImage), /0\.38/);
+  assert.match(await page.getByRole('listbox').evaluate(el => getComputedStyle(el).backgroundImage), /0\.33/);
   await page.screenshot({ path: path.resolve('.cache/overview-sort.png'), animations: 'disabled' });
   await page.keyboard.press('Escape');
   assert.equal((await page.evaluate(() => window.library.getSettings())).backgroundBlur, 50, 'legacy blur clamps to new range');
@@ -61,7 +61,7 @@ try {
   assert.notEqual(await page.locator('.mosaic-track').first().evaluate(el => getComputedStyle(el).transform), transform);
   assert.equal(await page.getByRole('button', { name: '暂停背景', exact: true }).count(), 0);
   assert.doesNotMatch(await page.locator('.overview-page').innerText(), /点击图表探索作品|从类型到年代|收藏的每一面|我的收藏/);
-  assert.equal(await page.locator('.overview-metric').count(), 3);
+  assert.equal(await page.locator('.overview-metric').count(), 4);
   const boxes = await Promise.all(['genres', 'chord', 'years', 'countries', 'ratings', 'directors', 'actors'].map(key => page.locator(`.panel-${key}`).boundingBox()));
   const [genres, chord, years, countries, ratings, directors, actors] = boxes;
   assert.ok(Math.abs(genres.y - chord.y) < 2 && Math.abs(years.y - countries.y) < 2, 'first two rows have two half-width cards');

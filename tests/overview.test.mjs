@@ -27,6 +27,15 @@ test('overview handles empty libraries and limits people rankings to ten', () =>
   assert.equal(summarizeLibrary(works.slice(0, 3)).directors.length, 3);
 });
 
+test('overview counts IMDb and Douban chart membership independently and deduplicates versions', () => {
+  const both = work(1, { topRank: 5, imdbTopRank: 250 });
+  const imdbOnly = work(2, { imdbTopRank: 1 });
+  const stats = summarizeLibrary([both, both, imdbOnly, work(3), work(4, { mediaType: 'tv', imdbTopRank: 20 })]);
+  assert.equal(stats.top250, 1);
+  assert.equal(stats.imdbTop250, 2);
+  assert.equal(summarizeLibrary([]).imdbTop250, 0);
+});
+
 test('rating lines count independent scores, exclude missing values and include boundaries once', () => {
   const items = [work(1, { ratingImdb: 0, ratingDouban: 8.5 }), work(2, { ratingImdb: 8, ratingDouban: null }),
     work(3, { ratingImdb: 9.9, ratingDouban: 10 }), work(4, { ratingImdb: 10 }), work(5, { ratingImdb: NaN }),

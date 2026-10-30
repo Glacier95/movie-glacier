@@ -3,7 +3,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { _electron as electron } from 'playwright-core';
 import { Store } from '../dist-electron/electron/store.js';
-import { appearanceDefaults, appearanceControls } from '../dist-electron/src/shared.js';
+import { backgroundBlurDefault, appearanceDefaults, appearanceControls } from '../dist-electron/src/shared.js';
 
 fs.mkdirSync('.cache', { recursive: true });
 const data = fs.mkdtempSync(path.resolve('.cache/appearance-'));
@@ -40,7 +40,7 @@ try {
   assert.doesNotMatch((await css('.settings-modal')).background, /rgba/);
   assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), appearanceDefaults);
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  assert.match((await css('.topbar')).backdrop, /blur\(8px\)/);
+  assert.match((await css('.topbar')).backdrop, /blur\(6px\)/);
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await page.locator('.overview-panel').first().waitFor();
   await openSettings(); await slider('面板毛玻璃模糊程度').press('Home'); await slider('面板背景不透明度').press('Home');
@@ -62,7 +62,7 @@ try {
   await page.locator('.panel-settings').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.resolve('.cache/appearance-controls.png') });
   await page.getByRole('button', { name: '保存设置', exact: true }).click();
   assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), appearanceDefaults);
-  assert.equal((await page.evaluate(() => window.library.getSettings())).backgroundBlur, 10);
+  assert.equal((await page.evaluate(() => window.library.getSettings())).backgroundBlur, backgroundBlurDefault);
   await page.evaluate(() => window.library.setSettings({ language: 'en' }));
   await page.getByRole('banner').getByRole('button', { name: 'Settings', exact: true }).click();
   assert.doesNotMatch(await page.getByRole('dialog').innerText(), /[\u3400-\u9fff]/);

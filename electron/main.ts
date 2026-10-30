@@ -3,7 +3,7 @@ import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell } from 'electron';
-import { posterWallDefaults, posterWallControls, appearanceDefaults, appearanceControls, type AppearanceSettings, type PosterWallSettings } from '../src/shared.js';
+import { backgroundBlurDefault, posterWallDefaults, posterWallControls, appearanceDefaults, appearanceControls, type AppearanceSettings, type PosterWallSettings } from '../src/shared.js';
 import type { ConnectionChecks, JobState, MatchCandidate, MetadataSource, PublicSettings, Work, WorkEdit } from '../src/shared.js';
 import { discover, findNfoId, localPoster, parseName, type DiscoveredMedia } from './scanner.js';
 import { localWorkMatches, repairParsedWork } from './local-match.js';
@@ -11,6 +11,7 @@ import { lookupYear } from './omdb.js';
 import { cacheImageDir, cacheLocalImage, Metadata } from './metadata.js';
 import { Store } from './store.js';
 import { Douban } from './douban.js';
+import { fetchImdbTop250, openImdbVerification } from './imdb.js';
 import { shooterSubtitleUrl } from './shooter.js';
 import { prepareDataDirectory } from './data-directory.js';
 
@@ -64,7 +65,7 @@ function discoverPlayer(): string {
 
 function settings(): PublicSettings {
   const savedBlur = store.getSetting('backgroundBlur');
-  const backgroundBlur = savedBlur === '' ? 10 : Number(savedBlur);
+  const backgroundBlur = savedBlur === '' ? backgroundBlurDefault : Number(savedBlur);
   const wallSettings = { ...posterWallDefaults, ...appearanceDefaults };
   for (const { key, min, max } of [...posterWallControls, ...appearanceControls]) {
     const saved = store.getSetting(key);
@@ -76,10 +77,11 @@ function settings(): PublicSettings {
     language: store.getSetting('language') === 'en' ? 'en' : 'zh',
     roots: store.roots(), playerPath: store.getSetting('playerPath') || (discoveredPlayer ??= discoverPlayer()),
     proxyUrl: store.getSetting('proxyUrl'),
-    backgroundBlur: Number.isFinite(backgroundBlur) ? Math.max(0, Math.min(50, Math.round(backgroundBlur))) : 10,
+    backgroundBlur: Number.isFinite(backgroundBlur) ? Math.max(0, Math.min(50, Math.round(backgroundBlur))) : backgroundBlurDefault,
     hasTmdbKey: Boolean(store.getSecret('tmdb')), hasOmdbKey: Boolean(store.getSecret('omdb')),
     doubanStatus: store.getSetting('doubanStatus') || '未登录或未验证',
     top250UpdatedAt: store.top250UpdatedAt(),
+    imdbTop250UpdatedAt: store.imdbTop250UpdatedAt(),
     needsSetup: process.env.FILM_LIBRARY_SMOKE !== '1' &&
       (!store.roots().length || (!store.getSecret('tmdb') && !store.getSecret('omdb')))
   };
@@ -268,6 +270,22 @@ async function refreshTop250(force: boolean): Promise<void> {
   catch (error) { job.failures++; progress({ message: `Top250 未更新：${String(error)}` }); }
 }
 
+async function refreshImdbTop250(force: boolean): Promise<void> {
+  if (process.env.FILM_LIBRARY_SMOKE === '1') return;
+  const updatedAt = store.imdbTop250UpdatedAt();
+  if (!force && !store.getSetting('imdbTop250Failed') && updatedAt && Date.now() - updatedAt < 7 * 24 * 3600_000) return;
+  progress({ phase: '正在更新 IMDb Top 250 榜单' });
+  try {
+    store.replaceImdbTop250(await fetchImdbTop250());
+    store.setSetting('imdbTop250Failed', '');
+    changed();
+  } catch (error) {
+    store.setSetting('imdbTop250Failed', '1');
+    job.failures++;
+    progress({ message: `IMDb Top 250 未更新：${String(error)}` });
+  }
+}
+
 async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobState> {
   if (job.running) return job;
   job = freshJob(kind);
@@ -333,6 +351,7 @@ async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobS
     store.retryFailed();
     await runTasks(metadataSource);
     await refreshTop250(kind === 'refresh');
+    await refreshImdbTop250(kind === 'refresh');
   } finally {
     progress({ running: false, phase: '已完成', message: job.message || '更新完成' });
     changed();
@@ -532,6 +551,7 @@ function registerIpc(): void {
   ipcMain.handle('isFullscreen', () => mainWindow?.isFullScreen() ?? false);
   ipcMain.handle('doubanLogin', async () => { await douban.login(); store.setSetting('doubanStatus', '会话窗口已打开'); changed(); });
   ipcMain.handle('doubanLogout', async () => { await douban.logout(); store.setSetting('doubanStatus', '已退出'); changed(); });
+  ipcMain.handle('imdbVerify', () => openImdbVerification());
   ipcMain.handle('play', async (_event, assetId: number) => {
     const asset = store.asset(assetId);
     if (!asset?.active || !asset.available) throw new Error('媒体文件不存在或硬盘未连接');

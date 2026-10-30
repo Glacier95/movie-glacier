@@ -108,6 +108,7 @@ export function summarizeLibrary(input: Work[], english = false, ratingStep: Rat
     total: works.length, movies: works.filter(w => w.mediaType === 'movie').length,
     series: works.filter(w => w.mediaType === 'tv').length, favorites: works.filter(w => w.favorite).length,
     top250: works.filter(w => w.topRank !== null && w.topRank > 0).length,
+    imdbTop250: works.filter(w => w.mediaType === 'movie' && w.imdbTopRank != null && w.imdbTopRank > 0).length,
     genres: tally(works, w => (w.genres.length ? w.genres : w.doubanTags).map(s => genreAliases[clean(s)] ?? clean(s))),
     years: tally(works, w => [w.year && Number.isInteger(w.year) && w.year > 0 ? String(w.year) : english ? 'Unknown year' : '未知年份'])
       .sort((a, b) => (Number(a.name) || Infinity) - (Number(b.name) || Infinity)),

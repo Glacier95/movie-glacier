@@ -36,6 +36,7 @@ const bridge: Bridge = {
   },
   doubanLogin: () => invoke('doubanLogin'),
   doubanLogout: () => invoke('doubanLogout'),
+  imdbVerify: () => invoke('imdbVerify'),
   onChanged: callback => {
     const listener = () => callback();
     ipcRenderer.on('changed', listener);

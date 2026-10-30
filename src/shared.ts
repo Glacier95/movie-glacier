@@ -52,6 +52,7 @@ export interface Work {
   ratingImdb: number | null;
   doubanVotes: number | null;
   topRank: number | null;
+  imdbTopRank: number | null;
   favorite: boolean;
   addedAt: number;
   updatedAt: number | null;
@@ -67,7 +68,7 @@ export interface PosterWallSettings {
 }
 
 export const posterWallDefaults: PosterWallSettings = {
-  overviewBlur: 3, overviewOpacity: 25, overviewSpeed: 100, overviewSaturation: 65
+  overviewBlur: 1, overviewOpacity: 62, overviewSpeed: 140, overviewSaturation: 65
 };
 
 export const posterWallControls: { key: keyof PosterWallSettings; label: string; min: number; max: number; unit: string }[] = [
@@ -85,8 +86,9 @@ export interface AppearanceSettings {
   backgroundBrightness: number;
 }
 export const appearanceDefaults: AppearanceSettings = {
-  panelBlur: 8, panelOpacity: 18, backgroundOpacity: 52, backgroundSaturation: 160, backgroundBrightness: 70
+  panelBlur: 6, panelOpacity: 13, backgroundOpacity: 77, backgroundSaturation: 160, backgroundBrightness: 88
 };
+export const backgroundBlurDefault = 5;
 export const appearanceControls: { key: keyof AppearanceSettings; group: 'panel' | 'background'; label: string; min: number; max: number; unit: string }[] = [
   { key: 'panelBlur', group: 'panel', label: '面板毛玻璃模糊程度', min: 0, max: 50, unit: 'px' },
   { key: 'panelOpacity', group: 'panel', label: '面板背景不透明度', min: 0, max: 100, unit: '%' },
@@ -105,6 +107,7 @@ export interface PublicSettings extends PosterWallSettings, AppearanceSettings {
   hasOmdbKey: boolean;
   doubanStatus: string;
   top250UpdatedAt: number | null;
+  imdbTop250UpdatedAt: number | null;
   needsSetup: boolean;
 }
 
@@ -183,4 +186,5 @@ export interface Bridge {
   onFullscreen(callback: (full: boolean) => void): () => void;
   doubanLogin(): Promise<void>;
   doubanLogout(): Promise<void>;
+  imdbVerify(): Promise<void>;
 }

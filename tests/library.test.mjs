@@ -133,6 +133,55 @@ test('SQLite store persists assets, metadata, ratings, and atomic Top250 snapsho
   store.close();
 });
 
+test('IMDb Top 250 migrates old libraries, links IDs, persists and retains complete snapshots on invalid updates', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'private-films-imdb-chart-'));
+  t.after(() => { if (root.startsWith(os.tmpdir())) fs.rmSync(root, { recursive: true, force: true }); });
+  const file = path.join(root, 'library.sqlite');
+  let store = await Store.open(file, wasm, secretStorage);
+  const id = store.createWork('movie', 'Ranked film', 1994);
+  const tvId = store.createWork('tv', 'Series', 1990);
+  for (const workId of [id, tvId]) store.putAsset({ workId, root, path: path.join(root, `${workId}.mkv`), kind: 'file', season: null, episode: null, size: 1, mtimeMs: 1 }, 1);
+  store.setWorkFields(id, { imdbId: 'tt0111161', doubanId: '1292052' });
+  // Simulate a pre-feature database while preserving existing library records.
+  store.run('ALTER TABLE works DROP COLUMN imdbTopRank');
+  store.run('DROP TABLE imdb_top250');
+  store.close();
+  store = await Store.open(file, wasm, secretStorage);
+  assert.equal(store.work(id).imdbTopRank, null);
+  assert.equal(store.imdbTop250UpdatedAt(), null);
+  const chart = Array.from({ length: 250 }, (_, i) => ({ rank: i + 1, imdbId: i === 0 ? 'tt0111161' : `tt${String(2000000 + i)}` }));
+  store.replaceTop250(Array.from({ length: 250 }, (_, i) => ({ rank: i + 1, doubanId: i === 0 ? '1292052' : String(3000000 + i) })));
+  store.replaceImdbTop250(chart);
+  const date = store.imdbTop250UpdatedAt();
+  assert.ok(date);
+  assert.deepEqual([store.work(id).topRank, store.work(id).imdbTopRank], [1, 1]);
+  for (const invalid of [chart.slice(0, 249), [...chart.slice(0, 249), chart[0]], chart.map(item => ({ ...item, rank: 1 }))]) {
+    assert.throws(() => store.replaceImdbTop250(invalid));
+    assert.equal(store.imdbTop250UpdatedAt(), date);
+    assert.equal(store.work(id).imdbTopRank, 1);
+  }
+  store.setManualFields(id, { imdbId: chart[249].imdbId });
+  assert.equal(store.work(id).imdbTopRank, 250, 'ID edits use the cached chart without another fetch');
+  store.setWorkFields(id, { imdbId: null });
+  assert.equal(store.work(id).imdbTopRank, null);
+  assert.equal(store.work(id).topRank, 1, 'IMDb changes do not alter Douban rankings');
+  store.applyManualFields(id);
+  assert.equal(store.work(id).imdbTopRank, 250);
+  store.setWorkFields(tvId, { imdbId: chart[0].imdbId });
+  assert.equal(store.work(tvId).imdbTopRank, null, 'the movie chart must not mark series');
+  store.close();
+  store = await Store.open(file, wasm, secretStorage);
+  assert.equal(store.work(id).imdbTopRank, 250);
+  assert.equal(store.imdbTop250UpdatedAt(), date);
+  store.replaceImdbTop250(chart.map(item => ({ ...item, imdbId: `tt${String(4000000 + item.rank)}` })));
+  assert.equal(store.work(id).imdbTopRank, null, 'a title leaving the chart loses its badge');
+  store.setWorkFields(id, { imdbId: 'tt4000001' });
+  assert.equal(store.work(id).imdbTopRank, 1, 'metadata ID updates link to existing chart');
+  store.repairWorkFromName(id, { mediaType: 'movie', title: 'Other film', year: 2000 });
+  assert.equal(store.work(id).imdbTopRank, null, 'reidentification clears stale rankings');
+  store.close();
+});
+
 test('existing libraries gain persisted Douban text fields and queue enrichment once', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'private-films-douban-migration-'));
   t.after(() => { if (root.startsWith(os.tmpdir())) fs.rmSync(root, { recursive: true, force: true }); });

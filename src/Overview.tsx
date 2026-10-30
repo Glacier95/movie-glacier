@@ -50,7 +50,8 @@ export default function Overview({ works, wallSettings }: { works: Work[]; wallS
     <div className="overview-metrics">{[
       [text('作品总数', 'TOTAL TITLES'), stats.total, text('按作品统计 · 不重复计算文件版本', 'Titles, not duplicate file versions')],
       ['MOVIES / SERIES', `${stats.movies} / ${stats.series}`, text('电影 / 剧集', 'Movies / series')],
-      ['DOUBAN TOP 250', stats.top250, text('库内上榜作品', 'Ranked titles in your library')]
+      ['DOUBAN TOP 250', stats.top250, text('库内上榜作品', 'Ranked titles in your library')],
+      ['IMDb TOP 250', stats.imdbTop250, text('库内上榜作品', 'Ranked titles in your library')]
     ].map(([label, value, hint]) => <div className="overview-metric" key={label}><span>{label}</span><strong>{value}</strong><small>{hint}</small></div>)}</div>
     {!stats.total && <div className="overview-empty"><h2>{text('你的收藏故事，从第一部开始', 'Your collection begins with one title')}</h2><p>{text('在设置中添加影视目录并更新库，统计将随资料自动出现。', 'Add a media folder and update your library in Settings to see its story here.')}</p></div>}
     <div className="overview-panels">{sections.map((section, i) => <section className={`overview-panel panel-${section.key}`} key={section.key}>

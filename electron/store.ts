@@ -3,6 +3,7 @@ import path from 'node:path';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import type { ParsedName } from './scanner.js';
 import type { MediaAsset, MediaType, Person, ScrapeLog, Work } from '../src/shared.js';
+import { validateImdbTop250, type ImdbChartEntry } from './imdb-chart.js';
 
 type SqlValue = string | number | null;
 type Row = Record<string, unknown>;
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS works (
   year INTEGER, overview TEXT NOT NULL DEFAULT '', runtime INTEGER, poster TEXT, backdrop TEXT,
   genres TEXT NOT NULL DEFAULT '[]', countries TEXT NOT NULL DEFAULT '[]', directors TEXT NOT NULL DEFAULT '[]',
   creators TEXT NOT NULL DEFAULT '[]', writers TEXT NOT NULL DEFAULT '[]', actors TEXT NOT NULL DEFAULT '[]',
-  ratingDouban REAL, ratingSeason INTEGER, ratingImdb REAL, doubanVotes INTEGER, topRank INTEGER,
+  ratingDouban REAL, ratingSeason INTEGER, ratingImdb REAL, doubanVotes INTEGER, topRank INTEGER, imdbTopRank INTEGER,
   addedAt INTEGER NOT NULL, updatedAt INTEGER, matchState TEXT NOT NULL DEFAULT 'pending',
   favorite INTEGER NOT NULL DEFAULT 0
 );
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS ratings (
   UNIQUE(workId,source,season)
 );
 CREATE TABLE IF NOT EXISTS top250 (rank INTEGER PRIMARY KEY, doubanId TEXT NOT NULL UNIQUE, fetchedAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS imdb_top250 (rank INTEGER PRIMARY KEY, imdbId TEXT NOT NULL UNIQUE, fetchedAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, type TEXT NOT NULL, workId INTEGER, status TEXT NOT NULL,
   error TEXT, updatedAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS task_history (id INTEGER PRIMARY KEY, taskId INTEGER NOT NULL, workId INTEGER,
@@ -54,6 +56,7 @@ export class Store {
     db.run(schema);
     const columns = db.exec('PRAGMA table_info(works)')[0]?.values.map(row => String(row[1])) ?? [];
     if (!columns.includes('ratingSeason')) db.run('ALTER TABLE works ADD COLUMN ratingSeason INTEGER');
+    if (!columns.includes('imdbTopRank')) db.run('ALTER TABLE works ADD COLUMN imdbTopRank INTEGER');
     if (!columns.includes('favorite')) db.run('ALTER TABLE works ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0');
     if (!columns.includes('doubanTitleZh')) db.run("ALTER TABLE works ADD COLUMN doubanTitleZh TEXT NOT NULL DEFAULT ''");
     if (!columns.includes('doubanOverviewZh')) db.run("ALTER TABLE works ADD COLUMN doubanOverviewZh TEXT NOT NULL DEFAULT ''");
@@ -116,6 +119,7 @@ export class Store {
   roots(): string[] { try { return JSON.parse(this.getSetting('roots') || '[]') as string[]; } catch { return []; } }
   setRoots(roots: string[]): void { this.setSetting('roots', JSON.stringify(roots)); }
   top250UpdatedAt(): number | null { return Number(this.one<{ date: number }>('SELECT MAX(fetchedAt) AS date FROM top250')?.date) || null; }
+  imdbTop250UpdatedAt(): number | null { return Number(this.one<{ date: number }>('SELECT MAX(fetchedAt) AS date FROM imdb_top250')?.date) || null; }
 
   listWorks(): Work[] {
     const rows = this.all<Row>('SELECT * FROM works WHERE matchState != ? ORDER BY addedAt DESC', ['ignored']);
@@ -192,7 +196,7 @@ export class Store {
       this.db.run(`UPDATE works SET mediaType=?,titleZh=?,titleEn=?,originalTitle=?,year=?,
         tmdbId=NULL,imdbId=NULL,doubanId=NULL,doubanTitleZh='',doubanOverviewZh='',doubanTags='[]',
         overview='',runtime=NULL,poster=NULL,backdrop=NULL,genres='[]',countries='[]',directors='[]',creators='[]',writers='[]',actors='[]',
-        ratingDouban=NULL,ratingSeason=NULL,ratingImdb=NULL,doubanVotes=NULL,topRank=NULL,updatedAt=NULL,matchState='pending'
+        ratingDouban=NULL,ratingSeason=NULL,ratingImdb=NULL,doubanVotes=NULL,topRank=NULL,imdbTopRank=NULL,updatedAt=NULL,matchState='pending'
         WHERE id=?`, [parsed.mediaType, parsed.title, parsed.title, parsed.title, parsed.year, id]);
       this.db.run('DELETE FROM ratings WHERE workId=?', [id]);
       this.db.run("UPDATE tasks SET status='skipped',error='本地识别已修正，等待重新抓取' WHERE workId=? AND status IN ('pending','running','failed')", [id]);
@@ -220,6 +224,7 @@ export class Store {
     if (!entries.length) return;
     const values = entries.map(([, value]) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value as SqlValue);
     this.run(`UPDATE works SET ${entries.map(([key]) => `${key}=?`).join(',')} WHERE id=?`, [...values, id]);
+    if (entries.some(([key]) => key === 'imdbId')) this.syncImdbTopRank(id);
   }
   setManualFields(id: number, fields: Partial<Pick<Work, 'titleZh' | 'titleEn' | 'year' | 'overview' | 'imdbId' | 'doubanId'>>): void {
     const previous = this.one<{ fields: string }>('SELECT fields FROM work_edits WHERE workId=?', [id]);
@@ -283,6 +288,21 @@ export class Store {
   }
   syncTopRank(id: number): void {
     this.run('UPDATE works SET topRank=(SELECT rank FROM top250 WHERE doubanId=works.doubanId) WHERE id=?', [id]);
+  }
+  replaceImdbTop250(entries: ImdbChartEntry[]): void {
+    validateImdbTop250(entries);
+    const now = Date.now();
+    this.db.run('BEGIN');
+    try {
+      this.db.run('DELETE FROM imdb_top250');
+      for (const item of entries) this.db.run('INSERT INTO imdb_top250(rank,imdbId,fetchedAt) VALUES(?,?,?)', [item.rank, item.imdbId, now]);
+      this.db.run("UPDATE works SET imdbTopRank=CASE WHEN mediaType='movie' THEN (SELECT rank FROM imdb_top250 WHERE imdbId=works.imdbId) END");
+      this.db.run('COMMIT');
+      this.save();
+    } catch (error) { this.db.run('ROLLBACK'); throw error; }
+  }
+  syncImdbTopRank(id: number): void {
+    this.run("UPDATE works SET imdbTopRank=CASE WHEN mediaType='movie' THEN (SELECT rank FROM imdb_top250 WHERE imdbId=works.imdbId) END WHERE id=?", [id]);
   }
   queueTask(type: string, workId: number): void {
     if (this.one('SELECT id FROM tasks WHERE type=? AND workId=? AND status IN (?,?)', [type, workId, 'pending', 'running'])) return;

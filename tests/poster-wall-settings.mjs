@@ -26,7 +26,7 @@ try {
   app = await launch(); let page = await app.firstWindow(); page.setDefaultTimeout(15_000);
   const errors = []; page.on('pageerror', error => errors.push(String(error)));
   await page.locator('.poster-card').waitFor();
-  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), posterWallDefaults, 'old profiles keep the original appearance');
+  assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), posterWallDefaults, 'unset preferences use the app defaults');
   for (const { key, min, max } of posterWallControls) for (const value of [min - 1, max + 1, 1.5, null, '10']) {
     await assert.rejects(page.evaluate(patch => window.library.setSettings(patch), { [key]: value }), /Overview/);
   }
@@ -50,8 +50,8 @@ try {
   await page.locator('.wall-settings').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.resolve('.cache/wall-settings-preview.png') });
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0.25');
-  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).filter), 'blur(3px) saturate(0.65)');
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0.62');
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).filter), 'blur(1px) saturate(0.65)');
   await openSettings();
   await slider('海报墙模糊程度').press('End'); await slider('海报墙不透明度').press('Home');
   await slider('海报墙滚动速度').press('End'); await slider('海报墙色彩饱和度').press('Home');
@@ -66,7 +66,7 @@ try {
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await openSettings();
   await page.locator('.wall-settings').getByRole('button', { name: '恢复默认效果', exact: true }).click();
-  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0.25');
+  assert.equal(await page.locator('.mosaic-grid').evaluate(el => getComputedStyle(el).opacity), '0.62');
   await page.evaluate(() => { window.__wallTrack = document.querySelector('.mosaic-track'); });
   await slider('海报墙滚动速度').press('End');
   assert.equal(await page.evaluate(() => window.__wallTrack === document.querySelector('.mosaic-track')), true, 'speed changes keep the existing track and images');
@@ -76,7 +76,7 @@ try {
   await page.evaluate(() => window.library.setSettings({ language: 'en' }));
   await page.getByRole('banner').getByRole('button', { name: 'Settings', exact: true }).click();
   assert.doesNotMatch(await page.locator('.wall-settings').innerText(), /[\u3400-\u9fff]/);
-  assert.equal(await page.getByRole('slider', { name: 'Poster wall opacity', exact: true }).inputValue(), '25');
+  assert.equal(await page.getByRole('slider', { name: 'Poster wall opacity', exact: true }).inputValue(), '62');
   assert.deepEqual(errors, []);
   console.log('Poster wall settings passed: defaults, range validation, live preview, cancellation, persistence, restart, reset, motion and English.');
 } finally { await app?.close(); }
