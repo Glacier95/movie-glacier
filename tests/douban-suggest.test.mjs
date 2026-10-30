@@ -33,6 +33,20 @@ test('single translated suggestion can match an exact release year', () => {
   assert.equal(chooseDoubanSuggestion({ ...work, year: 1995 }, null, suggestions), null);
 });
 
+test('Douban matches bilingual release names and explicit AKA aliases without shortening unrelated titles', () => {
+  const work = title => ({ mediaType: 'movie', titleZh: title, titleEn: title, originalTitle: title, year: 2023 });
+  const suggestions = [
+    { id: '35902857', title: '完美的日子', sub_title: 'Perfect Days', year: '2023' },
+    { id: '1234567', title: 'Other film', sub_title: 'Other film', year: '2023' }
+  ];
+  assert.equal(chooseDoubanSuggestion(work('Perfect Days AKA The Tokyo Toilet'), null, suggestions)?.id, '35902857');
+  assert.equal(chooseDoubanSuggestion(work('Perfect Days: Behind the Scenes'), null, suggestions), null);
+  assert.equal(chooseDoubanSuggestion({ ...work('风柜来的人 All the Youthful Days'), year: 1983 }, null, [
+    { id: '1299436', title: '风柜来的人', sub_title: 'The Boys from Fengkuei', year: '1983' },
+    { id: '1234567', title: 'Other film', year: '1983' }
+  ])?.id, '1299436');
+});
+
 test('search page fallback reads Chinese title, genres and rating only from the selected ID', () => {
   const links = [
     { href: 'https://movie.douban.com/subject/1294194/', text: '悲情城市 (1989)', context: '9.0(150847人评价) 中国台湾 / 剧情' },

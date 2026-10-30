@@ -57,6 +57,28 @@ export function chooseOmdbCandidate(title: string, year: number | null, candidat
   return best.candidate;
 }
 
+export async function searchOmdbCandidate(work: Work, request: (params: Record<string, string>) => Promise<{
+  Response?: string; Error?: string; Search?: OmdbCandidate[];
+}>): Promise<OmdbCandidate | null> {
+  const year = lookupYear(work);
+  for (const title of omdbQueries(work)) {
+    const found = new Map<string, OmdbCandidate>();
+    const years = [null, ...(year === null ? [] : [year, year + 1, year - 1])];
+    for (const releaseYear of years) {
+      const data = await request({ s: title, type: work.mediaType === 'movie' ? 'movie' : 'series',
+        ...(releaseYear === null ? {} : { y: String(releaseYear) }) });
+      // A broad title is not a provider outage. Try a year and the other aliases
+      // before falling back to Douban, while still surfacing key/quota errors.
+      if (data.Response === 'False' && !/not found|too many results/i.test(data.Error ?? ''))
+        throw new Error(`OMDb：${data.Error ?? '搜索失败'}`);
+      for (const item of data.Search ?? []) if (/^tt\d{7,10}$/.test(item.imdbID)) found.set(item.imdbID, item);
+      const selected = chooseOmdbCandidate(title, year, [...found.values()]);
+      if (selected) return selected;
+    }
+  }
+  return null;
+}
+
 export function omdbPeople(value: string | undefined): { id: string; name: string }[] {
   if (!value || value === 'N/A') return [];
   return [...new Set(value.split(',').map(item => item.trim()).filter(item => item && item !== 'N/A'))]

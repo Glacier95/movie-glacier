@@ -43,6 +43,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **0.6.9** | 修复 AKA 与中英文片名匹配，豆瓣可回填 IMDb 编号并自动重试英文资料。 | Fix AKA and bilingual title matching; recover IMDb IDs from Douban and retry English metadata automatically. |
 | **0.6.8** | 新增 IMDb Top 250 筛选、排名与统计，更新默认玻璃及海报效果。 | Add IMDb Top 250 filters, ranks and statistics; refresh default glass and poster effects. |
 | **0.6.7** | 演职员榜单改为 Top 10，修复明细展开收起导致页面变长。 | Top 10 director/cast rankings; fix layout growth when toggling details. |
 | **0.6.6** | 返回片库恢复浏览位置，增加细分评分区间与统计摘要。 | Restore browsing position; add finer rating bins and summary statistics. |

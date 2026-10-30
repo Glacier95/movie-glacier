@@ -9,8 +9,12 @@ export function knownSeries(title: string): { titleZh: string; titleEn: string; 
 
 export function titleQueries(title: string): string[] {
   // Keep &, punctuation and numbers in English titles (Love, Death & Robots / Reply 1988).
-  const english = title.match(/[A-Za-z][^\p{Script=Han}\p{Script=Hangul}\p{Script=Hiragana}\p{Script=Katakana}]*/u)?.[0]
-    ?.replace(/[\[\]【】()（）]+/g, ' ').trim();
-  const chinese = title.split(/[A-Za-z]/)[0]?.replace(/[\[\]【】()（）]+/g, ' ').trim();
-  return [...new Set([english, title.trim(), chinese].filter((value): value is string => Boolean(value)))];
+  // Release names may explicitly join alternative titles with AKA. Search each
+  // complete alias instead of treating the entire release name as one title.
+  return [...new Set(title.split(/\s+(?:aka|a\.k\.a\.)\s+/i).flatMap(alias => {
+    const english = alias.match(/[A-Za-z][^\p{Script=Han}\p{Script=Hangul}\p{Script=Hiragana}\p{Script=Katakana}]*/u)?.[0]
+      ?.replace(/[\[\]【】()（）]+/g, ' ').trim();
+    const chinese = alias.split(/[A-Za-z]/)[0]?.replace(/[\[\]【】()（）]+/g, ' ').trim();
+    return [english, alias.trim(), chinese].filter((value): value is string => Boolean(value));
+  }))];
 }

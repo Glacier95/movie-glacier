@@ -2,6 +2,7 @@ import { BrowserWindow, session } from 'electron';
 import type { Work } from '../src/shared.js';
 import { chooseDoubanSuggestion, doubanChineseTitle, ratingFromSearchLinks, type DoubanSearchLink, type DoubanSuggestion, type DoubanSubject } from './douban-match.js';
 import { lookupDoubanIdByImdb } from './douban-crosswalk.js';
+import { titleQueries } from './media-titles.js';
 
 export class Douban {
   private browser: BrowserWindow | null = null;
@@ -123,7 +124,9 @@ export class Douban {
     // English query ("For a Few Dollars More" may be empty while "For A Few
     // Dollars More" finds the film). Include original titles as well.
     const titleCase = (value: string) => value.replace(/\b[a-z]/g, letter => letter.toUpperCase());
-    const queries = season === null ? [base, work.titleEn, work.originalTitle, titleCase(work.titleEn)] :
+    const aliases = [...new Set([work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries))];
+    const chinese = aliases.filter(title => /\p{Script=Han}/u.test(title) && !/[A-Za-z]/.test(title));
+    const queries = season === null ? [...chinese, ...aliases, ...aliases.map(titleCase)] :
       [base, `${base} 第${numerals[season] ?? season}季`, `${work.titleEn} Season ${season}`];
     let sawSuggestions = false;
     for (const query of [...new Set(queries.map(value => value?.trim()).filter(Boolean))]) {
@@ -173,7 +176,7 @@ export class Douban {
 
   async readKnownSubject(work: Work): Promise<DoubanSubject | null> {
     if (!work.doubanId) return null;
-    return this.readWithFallback(work.doubanId, [work.titleZh, work.titleEn, work.originalTitle].filter(Boolean));
+    return this.readWithFallback(work.doubanId, [work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries));
   }
 
   private async readWithFallback(id: string, queries: string[]): Promise<DoubanSubject | null> {

@@ -1,5 +1,6 @@
 import type { Work } from '../src/shared.js';
 import { normalizeTitle } from './scanner.js';
+import { titleQueries } from './media-titles.js';
 
 export interface DoubanSubject { id: string; title: string; year: number | null; rating: number | null; votes: number | null;
   imdbId?: string | null; titleZh?: string; overviewZh?: string; tagsZh?: string[]; }
@@ -46,7 +47,7 @@ function seasonNumber(title: string): number | null {
 
 export function chooseDoubanSuggestion(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle' | 'year'>,
   season: number | null, suggestions: DoubanSuggestion[]): DoubanSuggestion | null {
-  const titles = [work.titleZh, work.titleEn, work.originalTitle].map(normalizeTitle).filter(Boolean);
+  const titles = [work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries).map(normalizeTitle).filter(Boolean);
   const candidates = suggestions.filter(item => /^\d{4,12}$/.test(item.id) &&
     (season !== null || !work.year || !Number(item.year) || Math.abs(work.year - Number(item.year)) <= 1) &&
     (season === null ? seasonNumber(item.title) === null && (work.mediaType !== 'movie' || !item.episode) : seasonNumber(item.title) === season));
@@ -70,7 +71,7 @@ export function chooseDoubanSuggestion(work: Pick<Work, 'mediaType' | 'titleZh' 
 export function chooseDoubanSubject(work: Pick<Work, 'mediaType' | 'titleZh' | 'titleEn' | 'originalTitle' | 'year'>,
   season: number | null, preferredId: string | null, links: DoubanSearchLink[]): DoubanSubject | null {
   const numerals = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
-  const titles = [work.titleZh, work.titleEn, work.originalTitle].map(normalizeTitle).filter(Boolean);
+  const titles = [work.titleZh, work.titleEn, work.originalTitle].flatMap(titleQueries).map(normalizeTitle).filter(Boolean);
   const seen = new Set<string>();
   for (const link of links) {
     const id = /\/subject\/(\d+)/.exec(link.href)?.[1];

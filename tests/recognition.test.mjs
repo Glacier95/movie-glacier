@@ -57,6 +57,10 @@ test('TMDB never accepts a shorter title just because its year matches', () => {
   assert.equal(titleQueries('Reply 1988')[0], 'Reply 1988');
   assert.equal(chooseTmdbCandidate('爱死亡和机器人', null, [candidate(2, '爱，死亡和机器人', 2019)])?.id, 2);
   assert.equal(chooseTmdbCandidate('Solaris', null, [candidate(1, 'Solaris', 1972), candidate(2, 'Solaris', 2002)]), null);
+  assert.deepEqual(titleQueries('Perfect Days AKA The Tokyo Toilet'), ['Perfect Days', 'The Tokyo Toilet']);
+  assert.deepEqual(titleQueries('Perfect Days a.k.a. The Tokyo Toilet'), ['Perfect Days', 'The Tokyo Toilet']);
+  assert.deepEqual(titleQueries('AKA'), ['AKA']);
+  assert.equal(chooseTmdbCandidate('Perfect Days AKA The Tokyo Toilet', 2023, [candidate(1, 'Perfect Days', 2023)])?.id, 1);
 });
 
 test('later seasons do not masquerade as series premiere years; explicit film IDs tolerate year differences', () => {

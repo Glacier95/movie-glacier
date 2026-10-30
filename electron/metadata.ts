@@ -5,7 +5,7 @@ import { session, type Session } from 'electron';
 import type { ConnectionChecks, MatchCandidate, MediaType, Person, Work } from '../src/shared.js';
 import { titleQueries } from './media-titles.js';
 import { tmdbScore, chooseTmdbCandidate } from './tmdb-match.js';
-import { chooseOmdbCandidate, lookupYear, omdbChineseTitle, omdbPeople, omdbQueries, omdbYear,
+import { searchOmdbCandidate, lookupYear, omdbChineseTitle, omdbPeople, omdbYear,
   safeOmdbPoster, checkOmdbYear, type OmdbCandidate } from './omdb.js';
 import { Store } from './store.js';
 
@@ -163,23 +163,7 @@ export class Metadata {
   }
 
   private async omdbCandidate(work: Work): Promise<OmdbCandidate | null> {
-    const year = lookupYear(work);
-    for (const title of omdbQueries(work)) {
-      const found = new Map<string, OmdbCandidate>();
-      const years = [null, ...(year === null ? [] : [year, year + 1, year - 1])];
-      for (const releaseYear of years) {
-        const data = await this.omdb({ s: title, type: work.mediaType === 'movie' ? 'movie' : 'series',
-          ...(releaseYear === null ? {} : { y: String(releaseYear) }) });
-        if (data.Response === 'False' && !/not found/i.test(String(data.Error ?? '')))
-          throw new Error(`OMDb：${data.Error ?? '搜索失败'}`);
-        for (const item of (data.Search ?? []) as OmdbCandidate[]) {
-          if (/^tt\d{7,10}$/.test(item.imdbID)) found.set(item.imdbID, item);
-        }
-        const selected = chooseOmdbCandidate(title, year, [...found.values()]);
-        if (selected) return selected;
-      }
-    }
-    return null;
+    return searchOmdbCandidate(work, params => this.omdb(params));
   }
 
   async hydrateOmdb(workId: number, applyManualEdits = true): Promise<string[]> {

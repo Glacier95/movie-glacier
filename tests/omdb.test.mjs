@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { chooseOmdbCandidate, lookupYear, omdbQueries } from '../dist-electron/electron/omdb.js';
+import { chooseOmdbCandidate, lookupYear, omdbQueries, searchOmdbCandidate } from '../dist-electron/electron/omdb.js';
 
 const candidate = (Title, Year, imdbID) => ({ Title, Year, imdbID });
 
@@ -38,4 +38,24 @@ test('series matching uses the earliest local season rather than a later revival
 test('1983 Nostalgia searches its IMDb spelling before similarly named films', () => {
   const work = { mediaType: 'movie', titleZh: 'Nostalgia', titleEn: 'Nostalgia', originalTitle: 'Nostalgia', year: 1983 };
   assert.deepEqual(omdbQueries(work), ['Nostalghia', 'Nostalgia']);
+});
+
+test('OMDb splits explicit AKA aliases and continues after broad searches return too many results', async () => {
+  const work = { mediaType: 'movie', titleZh: 'Perfect Days AKA The Tokyo Toilet', titleEn: '', originalTitle: '', year: 2023 };
+  assert.deepEqual(omdbQueries(work), ['Perfect Days', 'The Tokyo Toilet']);
+  const calls = [];
+  const found = await searchOmdbCandidate(work, async params => {
+    calls.push(params);
+    return params.y === '2023' ? { Response: 'True', Search: [candidate('Perfect Days', '2023', 'tt27503384')] }
+      : { Response: 'False', Error: 'Too many results.' };
+  });
+  assert.equal(found?.imdbID, 'tt27503384');
+  assert.deepEqual(calls.map(params => [params.s, params.y ?? null]), [['Perfect Days', null], ['Perfect Days', '2023']]);
+  const queries = [];
+  await searchOmdbCandidate({ ...work, titleZh: '风柜来的人 All the Youthful Days', year: 1983 }, async params => {
+    queries.push(params.s); return { Response: 'False', Error: 'Too many results.' };
+  });
+  assert.ok(queries.includes('风柜来的人'), 'a broad English alias must not prevent trying the Chinese title');
+  await assert.rejects(searchOmdbCandidate(work, async () => ({ Response: 'False', Error: 'Invalid API key!' })), /Invalid API key/);
+  assert.equal(chooseOmdbCandidate('Perfect Days', 2023, [candidate('Perfect Days: Behind the Scenes', '2023', 'tt9999999')]), null);
 });

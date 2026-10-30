@@ -141,13 +141,19 @@ async function refreshDoubanWork(work: Work): Promise<string> {
   }
   if (subject) {
     const titleZh = (subject.titleZh ?? '').trim();
+    const discoveredImdbId = work.mediaType === 'movie' && !work.imdbId && /^tt\d{7,10}$/.test(subject.imdbId ?? '')
+      ? subject.imdbId : null;
     store.setWorkFields(work.id, {
       doubanId: subject.id,
+      ...(discoveredImdbId ? { imdbId: discoveredImdbId } : {}),
       ...(titleZh && /[\u3400-\u9fff]/.test(titleZh) ? { doubanTitleZh: titleZh, titleZh } : {}),
       ...(subject.overviewZh?.trim() ? { doubanOverviewZh: subject.overviewZh.trim() } : {}),
       ...(subject.tagsZh?.length ? { doubanTags: subject.tagsZh } : {})
     });
     store.applyManualFields(work.id);
+    // A Chinese title can find the correct entry even when OMDb does not know
+    // the release's English alias. Use the verified entry's IMDb ID to retry.
+    if (discoveredImdbId && store.work(work.id)?.imdbId && !work.tmdbId) store.queueTask('tmdb', work.id);
     if (subject.rating !== null) store.setRating(work.id, 'douban', null, subject.rating, subject.votes, subject.id);
     store.syncTopRank(work.id);
     if (work.mediaType === 'movie' && !store.work(work.id)?.doubanOverviewZh)
@@ -176,6 +182,7 @@ async function refreshDoubanWork(work: Work): Promise<string> {
 async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
   let metadataSource = initialSource;
   const attempted = new Set<number>();
+  const failures = new Map<string, number>();
   while (true) {
     const task = store.pendingTasks().find(item => !attempted.has(item.id));
     if (!task) break;
@@ -240,10 +247,17 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
       } else if (task.type === 'douban') {
         note = await refreshDoubanWork(work);
       }
-      if (!skipped) store.taskDone(task.id, undefined, note, logSource);
+      if (!skipped) {
+        store.taskDone(task.id, undefined, note, logSource);
+        const key = `${work.id}:${task.type}`;
+        job.failures -= failures.get(key) ?? 0;
+        failures.delete(key);
+      }
     } catch (error) {
       store.taskDone(task.id, String(error), '', logSource ?? (task.type === 'tmdb' ? metadataSource ?? 'tmdb' : undefined));
       job.failures++;
+      const key = `${work.id}:${task.type}`;
+      failures.set(key, (failures.get(key) ?? 0) + 1);
       if (networkFailure(error)) {
         progress({ message: String(error).replace(/^Error: /, '') });
         job.done++;
