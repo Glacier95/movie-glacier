@@ -46,6 +46,9 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const errors = []; page.on('pageerror', error => errors.push(String(error)));
   await page.locator('.brand').waitFor();
+  const expectedVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+  assert.equal(await page.locator('.app-version').innerText(), `v${expectedVersion}`);
+  assert.equal(await app.evaluate(({ app }) => app.getVersion()), expectedVersion);
   for (const film of films) {
     const card = page.locator('.poster-card').filter({ has: page.getByRole('button', { name: `查看《${film.zh}》详情`, exact: true }) });
     assert.equal(await card.locator('.poster-title').innerText(), film.primary);
