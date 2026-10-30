@@ -1,3 +1,4 @@
+import { electronExecutable } from './electron-path.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -34,7 +35,7 @@ store.setManualFields(manualId, { titleZh: '手动确认的条目' });
 store.close();
 let app;
 try {
-  app = await electron.launch({ executablePath: path.resolve(process.env.FILM_LIBRARY_PACKAGED === '1' ? 'release/win-unpacked/Movie Glacier.exe' : 'node_modules/electron/dist/electron.exe'),
+  app = await electron.launch({ executablePath: electronExecutable(),
     args: ['--no-sandbox', '--disable-gpu', ...(process.env.FILM_LIBRARY_PACKAGED === '1' ? [] : ['.'])], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' }, timeout: 30000 });
   const page = await app.firstWindow();
   await page.locator('.brand').waitFor({ timeout: 20000 });

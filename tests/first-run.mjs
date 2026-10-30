@@ -1,3 +1,4 @@
+import { electronExecutable } from './electron-path.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -6,9 +7,7 @@ import { _electron as electron } from 'playwright-core';
 const data = path.resolve(`.cache/first-run-${Date.now()}`);
 fs.mkdirSync(data, { recursive: true });
 const app = await electron.launch({
-  executablePath: process.env.FILM_LIBRARY_PACKAGED === '1'
-    ? path.resolve('release/win-unpacked/Movie Glacier.exe')
-    : path.resolve('node_modules/electron/dist/electron.exe'),
+  executablePath: electronExecutable(),
   args: process.env.FILM_LIBRARY_PACKAGED === '1' ? ['--no-sandbox', '--disable-gpu'] : ['--no-sandbox', '--disable-gpu', '.'],
   env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_TEST_ONBOARDING: '1' }
 });

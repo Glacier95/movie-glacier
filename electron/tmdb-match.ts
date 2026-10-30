@@ -6,6 +6,7 @@ export function tmdbScore(title: string, year: number | null, candidate: MatchCa
   const names = [candidate.title, candidate.originalTitle].map(mediaTitleKey).filter(Boolean);
   const exact = titleQueries(title).some(query => names.includes(mediaTitleKey(query)));
   if (!exact) return 0; // A shorter title plus a matching year must never be an automatic match.
+  if (year !== null && candidate.year === null) return 0;
   return 1 + (year !== null && candidate.year !== null
     ? year === candidate.year ? .25 : Math.abs(year - candidate.year) <= 1 ? .08 : -.3 : 0);
 }

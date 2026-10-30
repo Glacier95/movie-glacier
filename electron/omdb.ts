@@ -73,8 +73,13 @@ export async function searchOmdbCandidate(work: Work, request: (params: Record<s
         throw new Error(`OMDb：${data.Error ?? '搜索失败'}`);
       for (const item of data.Search ?? []) if (/^tt\d{7,10}$/.test(item.imdbID)) found.set(item.imdbID, item);
       const selected = chooseOmdbCandidate(title, year, [...found.values()]);
-      if (selected) return selected;
+      // A broad search may omit the exact-year film from its first page. Only
+      // accept it immediately when the year agrees; compare adjacent releases
+      // after all year-specific searches so remakes cannot win by request order.
+      if (selected && (year === null || omdbYear(selected.Year) === year)) return selected;
     }
+    const selected = chooseOmdbCandidate(title, year, [...found.values()]);
+    if (selected) return selected;
   }
   return null;
 }

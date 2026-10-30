@@ -2,8 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const size = 256;
-const data = Buffer.alloc(size * (size * 4 + 1));
 function rounded(x, y, cx, cy, halfW, halfH, radius) {
   const dx = Math.max(Math.abs(x - cx) - (halfW - radius), 0);
   const dy = Math.max(Math.abs(y - cy) - (halfH - radius), 0);
@@ -24,13 +22,6 @@ function sample(x, y) {
   if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0)) color = [229, 240, 255, 255];
   return color;
 }
-for (let y = 0; y < size; y++) {
-  const row = y * (size * 4 + 1);
-  for (let x = 0; x < size; x++) {
-    const rgba = sample(x, y);
-    for (let channel = 0; channel < 4; channel++) data[row + 1 + x * 4 + channel] = rgba[channel];
-  }
-}
 const crcTable = Array.from({ length: 256 }, (_, index) => {
   let value = index;
   for (let n = 0; n < 8; n++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
@@ -48,15 +39,26 @@ function chunk(type, bytes) {
   output.writeUInt32BE((crc ^ 0xffffffff) >>> 0, 8 + bytes.length);
   return output;
 }
-const header = Buffer.alloc(13);
-header.writeUInt32BE(size, 0);
-header.writeUInt32BE(size, 4);
-header[8] = 8;
-header[9] = 6;
-const png = Buffer.concat([
-  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-  chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(data)), chunk('IEND', Buffer.alloc(0))
-]);
+function renderPng(size) {
+  const data = Buffer.alloc(size * (size * 4 + 1));
+  for (let y = 0; y < size; y++) {
+    const row = y * (size * 4 + 1);
+    for (let x = 0; x < size; x++) {
+      const rgba = sample(x * 256 / size, y * 256 / size);
+      for (let channel = 0; channel < 4; channel++) data[row + 1 + x * 4 + channel] = rgba[channel];
+    }
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header[8] = 8;
+  header[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(data)), chunk('IEND', Buffer.alloc(0))
+  ]);
+}
+const png = renderPng(256);
 const icoHeader = Buffer.alloc(22);
 icoHeader.writeUInt16LE(1, 2);
 icoHeader.writeUInt16LE(1, 4);
@@ -66,5 +68,5 @@ icoHeader.writeUInt32LE(png.length, 14);
 icoHeader.writeUInt32LE(22, 18);
 const outputDir = path.join(process.cwd(), 'build');
 fs.mkdirSync(outputDir, { recursive: true });
-fs.writeFileSync(path.join(outputDir, 'icon.png'), png);
+fs.writeFileSync(path.join(outputDir, 'icon.png'), renderPng(1024));
 fs.writeFileSync(path.join(outputDir, 'icon.ico'), Buffer.concat([icoHeader, png]));

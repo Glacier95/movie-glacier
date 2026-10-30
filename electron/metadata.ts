@@ -80,7 +80,10 @@ async function cacheRemoteImage(imagePath: string | null | undefined, userData: 
   const target = path.join(cacheImageDir(userData), name);
   if (fs.existsSync(target)) return name;
   const response = await request(network, `https://image.tmdb.org/t/p/w780${imagePath}`, 'TMDB 海报');
-  fs.writeFileSync(`${target}.tmp`, Buffer.from(await response.arrayBuffer()));
+  if (!response.headers.get('content-type')?.startsWith('image/')) throw new Error('TMDB artwork response is not an image');
+  const data = Buffer.from(await response.arrayBuffer());
+  if (!data.length || data.length > 10_000_000) throw new Error('TMDB artwork has an invalid size');
+  fs.writeFileSync(`${target}.tmp`, data);
   fs.renameSync(`${target}.tmp`, target);
   return name;
 }
@@ -222,7 +225,7 @@ export class Metadata {
     const results = new Map<number, MatchCandidate>();
     for (const query of queries) {
       const data = await this.tmdb(`search/${type}`, { query, language: 'zh-CN' });
-      for (const item of (data.results ?? []).slice(0, 12) as TmdbResult[]) {
+      for (const item of (data.results ?? []) as TmdbResult[]) {
         results.set(item.id, {
           id: item.id, title: item.title ?? item.name ?? '', originalTitle: item.original_title ?? item.original_name ?? '',
           year: Number((item.release_date ?? item.first_air_date ?? '').slice(0, 4)) || null,
@@ -314,14 +317,14 @@ export class Metadata {
       return work.backdrop;
     });
     this.store.setWorkFields(workId, {
-      tmdbId, imdbId: external.imdb_id ?? work.imdbId,
+      tmdbId, imdbId: external.imdb_id || work.imdbId,
       titleZh: zh.title ?? zh.name ?? work.titleZh,
       titleEn: en.title ?? en.name ?? work.titleEn,
       originalTitle: en.original_title ?? en.original_name ?? work.originalTitle,
       year: Number((zh.release_date ?? zh.first_air_date ?? '').slice(0, 4)) || work.year,
       overview: en.overview || work.overview,
       runtime: zh.runtime ?? zh.episode_run_time?.[0] ?? null,
-      poster, backdrop,
+      poster: poster ?? work.poster, backdrop: backdrop ?? work.backdrop,
       genres: (en.genres ?? zh.genres ?? []).map((genre: any) => genre.name),
       countries: (zh.production_countries ?? zh.origin_country ?? []).map((country: any) => typeof country === 'string' ? country : country.name),
       directors, writers, creators, actors,

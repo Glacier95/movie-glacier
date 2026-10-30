@@ -5,6 +5,22 @@ import { chooseOmdbCandidate, lookupYear, omdbQueries, searchOmdbCandidate } fro
 
 const candidate = (Title, Year, imdbID) => ({ Title, Year, imdbID });
 
+test('an adjacent-year first page cannot beat an exact-year result on a later request', async () => {
+  const work = { mediaType: 'movie', titleZh: 'Home', titleEn: 'Home', originalTitle: 'Home', year: 2020 };
+  const result = await searchOmdbCandidate(work, async params => ({ Response: 'True', Search: [
+    params.y === '2020' ? candidate('Home', '2020', 'tt1000001') : candidate('Home', '2019', 'tt1000002')
+  ] }));
+  assert.equal(result?.imdbID, 'tt1000001');
+});
+
+test('equally plausible adjacent releases stay unmatched regardless of response order', async () => {
+  const work = { mediaType: 'movie', titleZh: 'Home', titleEn: 'Home', originalTitle: 'Home', year: 2020 };
+  const result = await searchOmdbCandidate(work, async params => ({ Response: 'True', Search: [
+    params.y === '2021' ? candidate('Home', '2021', 'tt1000001') : candidate('Home', '2019', 'tt1000002')
+  ] }));
+  assert.equal(result, null);
+});
+
 test('OMDb fallback rejects similarly named extras and accepts one-year release differences', () => {
   assert.equal(chooseOmdbCandidate('Dogville', 2003, [
     candidate('Dogville Confessions', '2003', 'tt0357608'),

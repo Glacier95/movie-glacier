@@ -1,3 +1,4 @@
+import { electronExecutable } from './electron-path.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -17,7 +18,7 @@ const file = path.join(media, 'fixture.mkv'); fs.writeFileSync(file, 'fixture');
 store.putAsset({ workId: id, root: media, path: file, kind: 'file', season: null, episode: null, size: 1, mtimeMs: 1 }, Date.now());
 store.setRoots([media]); store.setSetting('backgroundBlur', '17'); store.close();
 const packaged = process.env.FILM_LIBRARY_PACKAGED === '1';
-const launch = () => electron.launch({ executablePath: path.resolve(packaged ? 'release/win-unpacked/Movie Glacier.exe' : 'node_modules/electron/dist/electron.exe'), args: packaged ? ['--no-sandbox', '--disable-gpu'] : ['--no-sandbox', '--disable-gpu', '.'], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' } });
+const launch = () => electron.launch({ executablePath: electronExecutable(packaged), args: packaged ? ['--no-sandbox', '--disable-gpu'] : ['--no-sandbox', '--disable-gpu', '.'], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' } });
 const subset = settings => Object.fromEntries(appearanceControls.map(({ key }) => [key, settings[key]]));
 let app;
 try {
@@ -40,7 +41,7 @@ try {
   assert.doesNotMatch((await css('.settings-modal')).background, /rgba/);
   assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), appearanceDefaults);
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  assert.match((await css('.topbar')).backdrop, /blur\(6px\)/);
+  assert.match((await css('.topbar')).backdrop, /blur\(16px\)/);
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await page.locator('.overview-panel').first().waitFor();
   await openSettings(); await slider('面板毛玻璃模糊程度').press('Home'); await slider('面板背景不透明度').press('Home');
