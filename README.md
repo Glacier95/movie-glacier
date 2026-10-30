@@ -44,6 +44,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **0.7.2** | 剧集详情按季展示评分；恢复经典导航并精简页标题；修复《请回答1988》导演剪辑版目录识别。 | Show per-season ratings, restore classic navigation and simplify page headings, and recognize bilingual Reply 1988 director's-cut folders. |
 | **0.7.1** | 自动修复并归并旧剧集条目，完善英文剧名的豆瓣分季匹配、历史失败重试和 OMDb 配额提示。 | Repair and merge legacy series entries, improve localized season matching and historical retries, and pause OMDb when its quota is exhausted. |
 | **0.7.0（本地开发版）** | 新增 Mac 构建与原生操作，完善卡片连续动效；修复资料源故障互相阻断、相邻年份抢先匹配、Finder 隐藏文件入库及海报缓存丢失。 | Local development build: macOS packaging and native interactions, shared card transitions, isolated provider failures, safer year matching, Finder sidecar filtering and preserved artwork. |
 | **0.6.9** | 修复 AKA 与中英文片名匹配，豆瓣可回填 IMDb 编号并自动重试英文资料。 | Fix AKA and bilingual title matching; recover IMDb IDs from Douban and retry English metadata automatically. |

@@ -116,6 +116,12 @@ test('SQLite store persists assets, metadata, ratings, and atomic Top250 snapsho
   assert.deepEqual([store.work(seriesId).ratingDouban, store.work(seriesId).ratingSeason], [9.0, null]);
   store.setRating(seriesId, 'douban', 3, 8.8, 120, 'season-3');
   assert.deepEqual([store.work(seriesId).ratingDouban, store.work(seriesId).ratingSeason], [9.0, null], 'a distinct whole-series entry keeps its score');
+  store.setRating(seriesId, 'imdb', null, 8.3, 100, 'tt1000001');
+  store.setRating(seriesId, 'imdb', 3, 8.7, 50, 'tt1000001');
+  assert.equal(store.work(seriesId).ratingImdb, 8.3, 'a season score must not replace the overall IMDb score');
+  assert.deepEqual(store.work(seriesId).seasonRatings.map(({ season, source, score }) => ({ season, source, score })), [
+    { season: 2, source: 'douban', score: 9.2 }, { season: 3, source: 'douban', score: 8.8 }, { season: 3, source: 'imdb', score: 8.7 }
+  ]);
   store.ignoreWork(workId);
   assert.equal(store.listWorks().some(work => work.id === workId), false);
   assert.equal(store.ignoredWorks()[0].id, workId);

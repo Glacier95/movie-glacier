@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import type { ParsedName } from './scanner.js';
-import type { MediaAsset, MediaType, Person, ScrapeLog, Work } from '../src/shared.js';
+import type { MediaAsset, MediaType, Person, ScrapeLog, SeasonRating, Work } from '../src/shared.js';
 import { validateImdbTop250, type ImdbChartEntry } from './imdb-chart.js';
 
 type SqlValue = string | number | null;
@@ -129,12 +129,20 @@ export class Store {
       const asset = { ...row, active: Boolean(row.active), available: fs.existsSync(String(row.path)) } as unknown as MediaAsset;
       byWork.set(asset.workId, [...(byWork.get(asset.workId) ?? []), asset]);
     }
+    const ratingsByWork = new Map<number, SeasonRating[]>();
+    for (const row of this.all<Row>("SELECT workId,season,source,score,votes,sourceId,fetchedAt FROM ratings WHERE season IS NOT NULL AND source IN ('douban','imdb') ORDER BY season,source")) {
+      const workId = Number(row.workId);
+      const rating: SeasonRating = { season: Number(row.season), source: row.source === 'imdb' ? 'imdb' : 'douban',
+        score: Number(row.score), votes: row.votes === null ? null : Number(row.votes), sourceId: row.sourceId === null ? null : String(row.sourceId), fetchedAt: Number(row.fetchedAt) };
+      ratingsByWork.set(workId, [...(ratingsByWork.get(workId) ?? []), rating]);
+    }
     return rows.map(row => ({
       ...row,
       genres: JSON.parse(String(row.genres)), doubanTags: JSON.parse(String(row.doubanTags)), countries: JSON.parse(String(row.countries)),
       directors: JSON.parse(String(row.directors)) as Person[], creators: JSON.parse(String(row.creators)) as Person[],
       writers: JSON.parse(String(row.writers)) as Person[], actors: JSON.parse(String(row.actors)) as Person[],
       favorite: Boolean(row.favorite),
+      seasonRatings: ratingsByWork.get(Number(row.id)) ?? [],
       assets: byWork.get(Number(row.id)) ?? []
     } as Work)).filter(work => work.assets.length > 0);
   }
@@ -300,7 +308,7 @@ export class Store {
         [workId, source]);
       if (display) this.setWorkFields(workId, { ratingDouban: display.score, ratingSeason: display.season, doubanVotes: display.votes });
     }
-    if (source === 'imdb') this.setWorkFields(workId, { ratingImdb: score });
+    if (source === 'imdb' && season === null) this.setWorkFields(workId, { ratingImdb: score });
   }
   replaceTop250(entries: { rank: number; doubanId: string }[]): void {
     if (entries.length !== 250 || new Set(entries.map(item => item.doubanId)).size !== 250) throw new Error('Top250 列表不完整');

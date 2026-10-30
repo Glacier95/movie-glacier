@@ -24,6 +24,15 @@ export interface MediaAsset {
   lastSeen: number;
 }
 
+export interface SeasonRating {
+  season: number;
+  source: 'douban' | 'imdb';
+  score: number;
+  votes: number | null;
+  sourceId: string | null;
+  fetchedAt: number;
+}
+
 export interface Work {
   id: number;
   mediaType: MediaType;
@@ -49,6 +58,7 @@ export interface Work {
   actors: Person[];
   ratingDouban: number | null;
   ratingSeason: number | null;
+  seasonRatings: SeasonRating[];
   ratingImdb: number | null;
   doubanVotes: number | null;
   topRank: number | null;

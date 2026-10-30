@@ -28,6 +28,18 @@ test('numeric series titles retain their numbers while real release years are pa
   assert.equal(parse('天空之城.1986.mkv').year, 1986);
 });
 
+test('director-cut bilingual collection folders retain Reply 1988, release year and each file episode', () => {
+  const reply = '请回答1988.导演剪辑版.Reply.1988.E01-E20.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS';
+  for (const [filename, episode] of [['01.mkv', 1], ['E20.mkv', 20], ['Reply.1988.E02.mkv', 2], ['请回答1988.导演剪辑版.Reply.1988.E03.mkv', 3]]) {
+    const parsed = parse(path.join(reply, filename));
+    assert.deepEqual([parsed.mediaType, parsed.normalizedTitle, parsed.year, parsed.season, parsed.episode], ['tv', 'reply 1988', 2015, 1, episode], filename);
+  }
+  const robots = parse(path.join('Love.Death.&.Robots.S03.2022.1080p.NF.WEB-DL.x264.DDP5.1-ADWeb', 'E01.mkv'));
+  assert.deepEqual([robots.normalizedTitle, robots.year, robots.season, robots.episode], ['love death robots', 2022, 3, 1]);
+  assert.equal(parse('Blade.Runner.Directors.Cut.1982.mkv').mediaType, 'movie');
+  assert.equal(parse('Reply.1988.The.Movie.2020.mkv').normalizedTitle, 'reply 1988 the movie');
+});
+
 test('Chinese seasons, episode-only filenames and known numbered series share a series identity', () => {
   for (const [name, season, episode] of [
     ['爱死亡和机器人3.2022.E01.mkv', 3, 1],
