@@ -77,9 +77,9 @@ Media folders are read-only. Packaged macOS builds store data in `~/Library/Appl
 
 构建环境 / Build requirements：macOS 或 Windows、Node.js 24、pnpm 11。
 
-Mac 构建默认使用当前机器架构，另提供 Intel 构建命令。当前 Mac 包为本地 ad-hoc 签名，未做 Apple 公证，也未发布到上游 Releases。
+Mac 构建默认使用当前机器架构，另提供 Intel 构建命令。Mac 包使用 ad-hoc 签名，未做 Apple 公证。
 
-Mac builds default to the host architecture; an explicit Intel build is also available. Packaging runs in a temporary local folder to avoid iCloud/Finder attributes interfering with signing, then copies the DMG, ZIP and SHA256SUMS.txt into `release/`. These local builds use ad-hoc signing, are not Apple-notarized, and have not been published to upstream Releases.
+Mac builds default to the host architecture; an explicit Intel build is also available. Packaging runs in a temporary local folder to avoid iCloud/Finder attributes interfering with signing, then copies the DMG, ZIP and SHA256SUMS.txt into `release/`. Mac builds use ad-hoc signing and are not Apple-notarized.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -101,6 +101,32 @@ pnpm dist
 ```
 
 `test:desktop` uses 80 synthetic entries and locally generated fictional artwork. It checks shared poster transitions, scroll and focus restoration, keyboard shortcuts, modal focus, narrow layouts, reduced motion and macOS window reopening. `test:metadata` uses deterministic provider substitutes to check that verification and network failures leave other providers running; it does not verify live provider availability. All test data stays under ignored `.cache/` directories.
+
+## 自动构建与发布 · GitHub Actions
+
+[Build and release](https://github.com/Glacier95/movie-glacier/actions/workflows/release.yml) 在面向 `main` 的 PR、`main` 更新及手动运行时执行构建、单元测试与打包。三个平台分别上传 Actions 构建产物，保留 7 天；这些运行不会创建 Release。
+
+The workflow builds, tests and packages pull requests targeting `main`, updates to `main`, and manual runs. Each platform uploads an Actions artifact retained for seven days. These runs do not publish a Release.
+
+| 平台 / Platform | 发布文件 / Release files |
+| --- | --- |
+| Windows x64 | `Movie.Glacier.Setup.<version>.exe` |
+| Mac Apple Silicon | `Movie.Glacier-<version>-mac-arm64.dmg`, `.zip` |
+| Mac Intel | `Movie.Glacier-<version>-mac-x64.dmg`, `.zip` |
+| 校验 / Verification | Available blockmaps and one combined `SHA256SUMS.txt` |
+
+发布时，先更新 `package.json` 的版本和中英文更新历史并合并到 `main`，再给该提交打 `v<version>` 标签并推送。标签必须与应用版本完全一致；三个平台都成功后，工作流检查安装包完整性、生成统一校验文件并发布 GitHub Release。首次上传完成前保持草稿，失败后可重新运行。无需添加个人访问令牌，发布任务使用仓库自带的 `GITHUB_TOKEN`。
+
+To release, update the version in `package.json` and the bilingual changelog, merge to `main`, then push a matching `v<version>` tag. All three builds must pass before publication. The workflow validates the complete installer set, generates combined checksums, uploads the files and publishes the Release. A new Release remains a draft until its uploads finish; failed runs can be retried. The publish job uses the built-in `GITHUB_TOKEN`; no personal access token is required. Prerelease version tags are marked as prereleases.
+
+```sh
+# Run from the merged release commit; the tag must not already exist.
+release_tag="v$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
+git tag "$release_tag"
+git push origin "$release_tag"
+```
+
+CI checks do not replace native UI acceptance or live metadata-provider checks. macOS packages remain ad-hoc signed without Apple notarization.
 
 ## 开源与第三方服务 · License and third-party services
 

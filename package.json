@@ -13,6 +13,7 @@
     "url": "https://github.com/Glacier95/movie-glacier/issues"
   },
   "private": true,
+  "packageManager": "pnpm@11.25.0",
   "type": "module",
   "main": "dist-electron/electron/main.js",
   "scripts": {
@@ -73,6 +74,7 @@
       }
     ],
     "win": {
+      "artifactName": "Movie.Glacier.Setup.${version}.${ext}",
       "target": [
         "nsis"
       ],
@@ -92,7 +94,7 @@
         "dmg",
         "zip"
       ],
-      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "artifactName": "Movie.Glacier-${version}-mac-${arch}.${ext}",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
     }
