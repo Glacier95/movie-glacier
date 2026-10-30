@@ -9,10 +9,10 @@ fs.mkdirSync('.cache', { recursive: true });
 test('packaged macOS data stays outside the app bundle and development stays isolated', () => {
   assert.equal(applicationDataDirectory('darwin', true, '/Applications/Movie Glacier.app/Contents/Resources/app.asar',
     '/Applications/Movie Glacier.app/Contents/MacOS/Movie Glacier', '/Users/example/Library/Application Support'),
-    '/Users/example/Library/Application Support/Movie Glacier');
-  assert.equal(applicationDataDirectory('darwin', false, '/project', '/electron', '/support'), '/project/user-data');
+    path.join('/Users/example/Library/Application Support', 'Movie Glacier'));
+  assert.equal(applicationDataDirectory('darwin', false, '/project', '/electron', '/support'), path.join('/project', 'user-data'));
   assert.equal(applicationDataDirectory('win32', true, '/install/resources/app.asar', '/install/Movie Glacier.exe', '/support'),
-    '/install/user-data');
+    path.join('/install', 'user-data'));
 });
 
 test('migration preserves settings, key material, artwork and sessions without overwriting an existing library', () => {
