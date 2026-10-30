@@ -180,7 +180,7 @@ try {
   assert.doesNotMatch(await page.locator('.overview-page').innerText(), /[\u3400-\u9fff]/);
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.getByRole('banner').getByRole('button', { name: 'Settings', exact: true }).click();
-  assert.match(await page.locator('.settings-modal').evaluate(el => getComputedStyle(el).backgroundImage), /0\.18/);
+  assert.match(await page.locator('.settings-modal').evaluate(el => getComputedStyle(el).backgroundImage), /0\.13/);
   await page.screenshot({ path: path.resolve('.cache/overview-settings.png') });
   await page.getByRole('button', { name: 'Activity log', exact: true }).click();
   await page.screenshot({ path: path.resolve('.cache/overview-logs.png') });
