@@ -30,6 +30,16 @@ const app = await electron.launch({ executablePath: electronExecutable(packaged)
 try {
   let page = await app.firstWindow(); const errors = []; page.on('pageerror', error => errors.push(String(error)));
   await page.locator('.poster-card').first().waitFor();
+  assert.equal(await page.locator('.page-intro .eyebrow,.page-intro p').count(), 0, 'page headings omit promotional copy');
+  assert.equal(await page.locator('.main-tabs').evaluate(element => getComputedStyle(element).paddingTop), '0px');
+  assert.notEqual(await page.locator('.main-tabs button.active').evaluate(element => getComputedStyle(element, '::after').display), 'none',
+    'classic active-tab underline is visible');
+  await page.locator('.main-tabs button').nth(1).click();
+  assert.equal(await page.locator('.page-intro .eyebrow,.page-intro p').count(), 0);
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await page.locator('.overview-heading h1').waitFor();
+  assert.equal(await page.locator('.overview-heading .overview-eyebrow,.overview-heading p').count(), 0);
+  await page.locator('.main-tabs button').first().click();
   // Generate clearly fictional local artwork; no personal media or remote assets.
   const images = await page.evaluate(({ titles, colors }) => titles.map((title, index) => {
     const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 720;

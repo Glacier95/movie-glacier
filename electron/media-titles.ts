@@ -1,7 +1,8 @@
 // Small, explicit aliases for numeric series titles; never strip arbitrary movie sequels.
 export function knownSeries(title: string): { titleZh: string; titleEn: string; season: number | null } | null {
-  const compact = title.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, '');
-  if (/^(?:请回答1988|reply1988|응답하라1988)$/.test(compact))
+  const compact = title.normalize('NFKC').replace(/(?:导演剪辑|導演剪輯)版?|\bdirector(?:['’]?s)?[\s._-]+cut\b/gi, '')
+    .toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, '');
+  if (/^(?:(?:请回答1988|請回答1988)(?:reply1988|응답하라1988)?|reply1988(?:请回答1988|請回答1988)?|응답하라1988)$/.test(compact))
     return { titleZh: '请回答1988', titleEn: 'Reply 1988', season: null };
   const robots = /^(?:(?:爱死亡和机器人|爱死亡机器人|爱死机)(?:lovedeathandrobots|lovedeathrobots)?|lovedeathandrobots|lovedeathrobots)([1-9]\d?)?$/.exec(compact);
   return robots ? { titleZh: '爱，死亡和机器人', titleEn: 'Love, Death & Robots', season: Number(robots[1]) || null } : null;

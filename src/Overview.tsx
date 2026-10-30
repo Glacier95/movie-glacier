@@ -45,7 +45,7 @@ export default function Overview({ works, wallSettings }: { works: Work[]; wallS
   const selectedWorks = selection ? filtered.filter(w => selection.ids.includes(w.id)) : [];
   return <div className="overview-page">
     <PosterWall works={works} paused={reduced || hidden} settings={wallSettings}/>
-    <div className="overview-heading"><div><div className="overview-eyebrow">THE COLLECTION, IN PERSPECTIVE</div><h1>Overview<span className="overview-dot">.</span></h1></div></div>
+    <div className="overview-heading"><div><h1>Overview<span className="overview-dot">.</span></h1></div></div>
     <div className="overview-controls"><div className="overview-scopes" aria-label={text('统计范围', 'Collection scope')}>{(['all', 'movie', 'tv'] as const).map(value => <button key={value} aria-pressed={scope === value} onClick={() => setScope(value)}>{value === 'all' ? text('全部收藏', 'All titles') : value === 'movie' ? 'Movies' : 'Series'}</button>)}</div></div>
     <div className="overview-metrics">{[
       [text('作品总数', 'TOTAL TITLES'), stats.total, text('按作品统计 · 不重复计算文件版本', 'Titles, not duplicate file versions')],
