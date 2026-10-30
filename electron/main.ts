@@ -134,7 +134,7 @@ async function processMedia(media: DiscoveredMedia, seen: number, repair = false
 }
 
 async function refreshDoubanWork(work: Work): Promise<string> {
-  const seasons = [...new Set(work.assets.map(asset => asset.season).filter((value): value is number => value !== null))].sort((a, b) => a - b);
+  const seasons = [...new Set(work.assets.map(asset => asset.season).filter((value): value is number => value !== null && value > 0))].sort((a, b) => a - b);
   if (work.mediaType === 'tv' && seasons.length) return refreshDoubanSeasons(work, seasons);
   let doubanId = work.doubanId;
   let crosswalkError = '';

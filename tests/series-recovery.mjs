@@ -11,10 +11,10 @@ const media = path.join(data, 'media'); fs.mkdirSync(media);
 const store = await Store.open(path.join(data, 'library.sqlite'), path.resolve('dist-electron/sql-wasm.wasm'), {
   isEncryptionAvailable: () => false, encryptString: () => Buffer.alloc(0), decryptString: () => ''
 });
-const add = (id, name, season) => {
+const add = (id, name, season, episode = 1) => {
   const file = path.join(media, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'fixture');
   const stamp = new Date(Date.now() - 60_000); fs.utimesSync(file, stamp, stamp); const stat = fs.statSync(file);
-  store.putAsset({ workId: id, root: media, path: file, kind: 'file', season, episode: 1, size: stat.size, mtimeMs: stat.mtimeMs }, 1);
+  if (id !== null) store.putAsset({ workId: id, root: media, path: file, kind: 'file', season, episode, size: stat.size, mtimeMs: stat.mtimeMs }, 1);
 };
 const robots = store.createWork('tv', 'Love, Death & Robots', 2019);
 store.setWorkFields(robots, { imdbId: 'tt1000001', matchState: 'matched' });
@@ -27,8 +27,15 @@ add(duplicate, 'Love.Death.&.Robots.S03.2022.1080p.NF.WEB-DL.x264.DDP5.1-ADWeb/E
 add(duplicate, 'Love.Death.and.Robots/Volume 4/E01.mkv', null);
 store.recordSourceRefresh(duplicate, 'douban', '旧分季匹配失败');
 const reply = store.createWork('movie', '请回答', 1988);
-add(reply, '请回答1988.导演剪辑版.Reply.1988.E01-E20.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS/01.mkv', null);
-add(reply, '请回答1988.导演剪辑版.Reply.1988.E01-E20.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS/E20.mkv', null);
+const replyFolder = '请回答1988.导演剪辑版.Reply.1988.E01-E20.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS';
+add(reply, `${replyFolder}/Reply.1988.SP.2015.720p.HDTV.x265.AC3￡cXcY@FRDS.mkv`, null, null);
+store.setFavorite(reply, true);
+const replyEpisodes = store.createWork('tv', 'Reply 1988 2015', 2015);
+for (let episode = 1; episode <= 20; episode++) {
+  add(episode === 1 || episode === 20 ? replyEpisodes : null,
+    `${replyFolder}/Reply.1988.2015.E${String(episode).padStart(2, '0')}.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS.mkv`, 1, episode);
+}
+const replyAssetIds = store.listWorks().filter(work => [reply, replyEpisodes].includes(work.id)).flatMap(work => work.assets.map(asset => asset.id)).sort();
 store.recordSourceRefresh(reply, 'omdb', '旧条目类型不符');
 store.setRoots([media]);
 store.replaceTop250(Array.from({ length: 250 }, (_, i) => ({ rank: i + 1, doubanId: String(8000000 + i) })));
@@ -51,7 +58,7 @@ try {
       globalThis.seriesStore = this.store;
       const work = this.store.work(id);
       if (work.mediaType !== 'tv') throw new Error('Series classification was not repaired');
-      const robots = !work.titleZh.includes('请回答');
+      const robots = ![work.titleZh, work.titleEn, work.originalTitle].some(title => /请回答|Reply/i.test(title));
       this.store.setWorkFields(id, { titleEn: robots ? 'Love, Death & Robots' : 'Reply 1988',
         year: robots ? 2019 : 2015, imdbId: robots ? 'tt1000001' : 'tt2000001', matchState: 'matched' });
       return [];
@@ -94,11 +101,35 @@ try {
   assert.deepEqual(ratings, [{ season: 1, sourceId: '3000001' }, { season: 3, sourceId: '3000003' }, { season: 4, sourceId: '3000004' }]);
   assert.equal(works.find(work => work.id === reply).mediaType, 'tv');
   assert.equal(works.find(work => work.id === reply).year, 2015);
-  assert.deepEqual(works.find(work => work.id === reply).assets.map(asset => asset.episode).sort((a, b) => a - b), [1, 20]);
+  assert.deepEqual(works.find(work => work.id === reply).assets.filter(asset => asset.season === 1).map(asset => asset.episode).sort((a, b) => a - b), Array.from({ length: 20 }, (_, i) => i + 1));
+  assert.equal(works.find(work => work.id === reply).favorite, true);
+  assert.ok(replyAssetIds.every(id => works.find(work => work.id === reply).assets.some(asset => asset.id === id)));
   assert.equal(works.find(work => work.id === reply).ratingDouban, 9.7, 'single-season shows can use their whole-series Douban entry');
   assert.equal((await page.evaluate(() => window.library.listScrapeLogs())).filter(log => log.status === 'failed').length, 0);
   const queries = await app.evaluate(() => globalThis.seasonQueries.length);
   await page.evaluate(() => window.library.retryFailed());
   assert.equal(await app.evaluate(() => globalThis.seasonQueries.length), queries, 'resolved attempts and merged entries stay repaired');
-  console.log('Series recovery passed: one card, seasons 1/3/4, per-season IDs and ratings, favorites, Reply 1988 type repair, whole-series fallback and stable retry.');
+  const scan = await page.evaluate(() => window.library.rescanLibrary());
+  assert.equal(scan.failures, 0);
+  const scanned = await page.evaluate(() => window.library.listWorks());
+  assert.equal(scanned.length, 2);
+  const recovered = scanned.find(work => work.id === reply);
+  assert.equal(recovered.assets.length, 21);
+  assert.deepEqual(recovered.assets.filter(asset => asset.season === 1).map(asset => asset.episode).sort((a, b) => a - b), Array.from({ length: 20 }, (_, i) => i + 1));
+  assert.deepEqual(recovered.assets.filter(asset => asset.season === 0).map(asset => asset.episode), [1]);
+  assert.equal(recovered.ratingDouban, 9.7);
+  assert.ok(!(await app.evaluate(() => globalThis.seasonQueries)).some(query => /Season 0|第[零0]季/.test(query)), 'specials must not trigger a fake season-zero search');
+  await page.locator('.main-tabs button').nth(1).click();
+  await page.getByRole('button', { name: '查看《请回答1988》详情', exact: true }).click();
+  await page.locator('#season-1 .episodes button').first().waitFor();
+  assert.equal(await page.locator('#season-1 .episodes button').count(), 20);
+  assert.equal(await page.locator('#season-0 .episodes button').count(), 1);
+  assert.match(await page.locator('#season-0 .season-heading').innerText(), /特别篇/);
+  assert.match(await page.locator('#season-1 .season-heading-ratings').innerText(), /整剧.*9\.7/s);
+  assert.match(await page.locator('#season-0 .season-heading-ratings').innerText(), /暂无评分/);
+  await page.screenshot({ path: path.resolve('.cache/reply-1988-recovered.png'), animations: 'disabled' });
+  await page.evaluate(() => window.library.setSettings({ language: 'en' }));
+  await page.getByRole('group', { name: 'Season ratings', exact: true }).waitFor();
+  assert.equal(await page.locator('#season-0 h3').innerText(), 'Specials');
+  console.log('Series recovery passed: independent robot seasons; Reply 1988 legacy repair, all 20 exact filenames plus SP in one series, preserved IDs/favorite, scan discovery and stable retry.');
 } finally { await app.close(); }
