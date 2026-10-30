@@ -7,11 +7,15 @@ version. After completing a version, perform the following without asking for
 confirmation again:
 
 1. Update the application version and bilingual version history.
-2. Build the application and Windows x64 installer. Run relevant unit and
-   integration tests, including the packaged application when applicable.
-3. Commit and push the source changes to the configured GitHub repository.
-4. Create and push the version tag, then publish a GitHub Release containing the
-   installer and `SHA256SUMS.txt`. Follow the repository's existing naming scheme.
+2. Build the application and run relevant unit and integration tests, including
+   the packaged application when applicable. The pull request workflow builds
+   Windows x64 and both macOS architectures on native runners.
+3. Commit and push source changes and open a pull request targeting `main`.
+4. After the pull request is merged, the main-branch workflow automatically tags
+   and publishes an unpublished package.json version with the Windows installer,
+   macOS DMG/ZIP packages and combined `SHA256SUMS.txt`. Do not create a competing
+   manual release or overwrite a published version; increment the version for
+   new binaries. Retry the original failed workflow to finish its draft release.
 5. Verify publication and give the user the release link with a concise account
    of the changes and validation.
 
