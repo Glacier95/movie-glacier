@@ -1,7 +1,7 @@
 {
   "name": "movie-glacier",
-  "version": "0.6.9",
-  "description": "Personal Windows movie and series library",
+  "version": "0.7.0",
+  "description": "Personal movie and series library for macOS and Windows",
   "author": "Movie Glacier",
   "license": "MIT",
   "repository": {
@@ -21,7 +21,11 @@
     "start": "electron .",
     "dist": "pnpm build && electron-builder --win nsis --x64",
     "test": "node --test tests/*.test.mjs",
-    "test:smoke": "node tests/smoke.mjs"
+    "test:smoke": "node tests/smoke.mjs",
+    "dist:mac": "pnpm build && node scripts/dist-mac.cjs",
+    "dist:mac:intel": "pnpm build && node scripts/dist-mac.cjs --x64",
+    "test:desktop": "node tests/desktop-ui.mjs",
+    "test:metadata": "node tests/metadata-pipeline.mjs"
   },
   "dependencies": {
     "sql.js": "^1.13.0"
@@ -47,7 +51,6 @@
     "productName": "Movie Glacier",
     "compression": "maximum",
     "afterPack": "scripts/after-pack.cjs",
-    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
     },
@@ -80,6 +83,18 @@
       "include": "build/installer.nsh",
       "deleteAppDataOnUninstall": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     }
   }
 }

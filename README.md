@@ -1,8 +1,8 @@
 # Movie Glacier
 
-Windows 本地影视库：扫描电影与剧集，以海报浏览收藏，查看中英文资料和评分，并使用 PotPlayer 播放本地原文件。
+macOS / Windows 本地影视库：扫描电影与剧集，以动态海报卡片浏览收藏，查看中英文资料和评分，并使用本机播放器播放原文件。
 
-A Windows desktop library for your local movies and series. Browse posters, explore bilingual metadata and ratings, and play original files with PotPlayer.
+A macOS and Windows desktop library for local movies and series. Browse animated poster cards, explore bilingual metadata and ratings, and play original files with your preferred player.
 
 [下载 / Download](https://github.com/Glacier95/movie-glacier/releases/latest) · [问题反馈 / Issues](https://github.com/Glacier95/movie-glacier/issues) · [MIT License](LICENSE)
 
@@ -13,7 +13,8 @@ A Windows desktop library for your local movies and series. Browse posters, expl
 - **资料与评分 / Metadata and ratings**：支持 TMDB、OMDb、豆瓣资料及 IMDb／豆瓣评分。Supports metadata from TMDB, OMDb, and Douban, with IMDb and Douban ratings.
 - **双榜单 / Top 250 charts**：豆瓣与 IMDb Top 250 独立筛选、详情排名及片库统计；更新库时每七天刷新，刷新全部资料可强制更新，访问失败保留完整缓存。Filter by Douban and IMDb Top 250, view ranks and collection counts. Charts refresh weekly during library updates or on a full metadata refresh; failed requests preserve the last complete chart.
 - **片库概览 / Collection overview**：交互图表展示类型、年代、地区、评分与演职员统计。Explore genres, years, regions, ratings, and director/cast statistics through interactive charts.
-- **界面与播放 / Appearance and playback**：中英文界面、可调海报背景和毛玻璃效果，调用 PotPlayer 播放。Chinese and English interfaces, adjustable poster backgrounds and glass effects, and playback through PotPlayer.
+- **界面与播放 / Appearance and playback**：海报连续展开、轻微倾斜与按压回弹，支持系统减少动态效果；中英文界面及可调毛玻璃。Shared poster transitions, subtle tilt and press feedback, system reduced-motion support, bilingual UI and adjustable glass surfaces. New libraries use a 16px panel blur and 68% panel opacity; existing saved appearance settings are preserved.
+- **Mac 适配 / macOS support**：原生窗口按钮及菜单、Dock 重开、⌘F 搜索、⌘, 设置、⌘1/2/3 切换视图；自动识别 IINA / VLC，可选其他 `.app` 或系统默认播放器。Native window controls and menus, Dock reopening, standard shortcuts, and IINA / VLC / default-player support.
 
 ## 界面预览 · Screenshots
 
@@ -27,7 +28,7 @@ A Windows desktop library for your local movies and series. Browse posters, expl
 
 ## 快速开始 · Quick start
 
-1. 从 [Releases](https://github.com/Glacier95/movie-glacier/releases/latest) 安装 Windows x64 版本，另行安装 PotPlayer。Install the Windows x64 release and install PotPlayer separately.
+1. Windows 可从 [Releases](https://github.com/Glacier95/movie-glacier/releases/latest) 安装现有版本，并另行安装 PotPlayer。Mac 版本可按下方命令本地构建，打开 `release/` 中的 DMG 并拖入 Applications。Windows: install the existing release and PotPlayer. macOS: build locally using the commands below, open the DMG in `release/`, and drag the app to Applications.
 2. 首次启动时选择媒体目录、确认播放器路径，填写自己的 OMDb API Key 或 TMDB 读取令牌。Choose media folders, confirm the player path, and enter your own OMDb API key or TMDB read access token.
 3. 完成初次扫描后即可浏览；添加新文件后点击“更新库”。界面语言可在设置中切换。Browse after the initial scan; click “Update library” when new files arrive. Change the interface language in Settings.
 
@@ -43,6 +44,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **0.7.0（本地开发版）** | 新增 Mac 构建与原生操作，完善卡片连续动效；修复资料源故障互相阻断、相邻年份抢先匹配、Finder 隐藏文件入库及海报缓存丢失。 | Local development build: macOS packaging and native interactions, shared card transitions, isolated provider failures, safer year matching, Finder sidecar filtering and preserved artwork. |
 | **0.6.9** | 修复 AKA 与中英文片名匹配，豆瓣可回填 IMDb 编号并自动重试英文资料。 | Fix AKA and bilingual title matching; recover IMDb IDs from Douban and retry English metadata automatically. |
 | **0.6.8** | 新增 IMDb Top 250 筛选、排名与统计，更新默认玻璃及海报效果。 | Add IMDb Top 250 filters, ranks and statistics; refresh default glass and poster effects. |
 | **0.6.7** | 演职员榜单改为 Top 10，修复明细展开收起导致页面变长。 | Top 10 director/cast rankings; fix layout growth when toggling details. |
@@ -69,19 +71,36 @@ Summarized from development records, with the main changes for each version. Ear
 
 ## 数据与构建 · Data and build
 
-媒体目录只读，应用数据保存在安装目录的 `user-data` 中。升级保留数据；交互式卸载可选择是否清理。备份前先退出应用。
+媒体目录只读。Mac 安装版的数据保存在 `~/Library/Application Support/Movie Glacier`，不写入 `.app` 包；Windows 安装版和开发模式仍使用安装目录或项目目录下的 `user-data`。更新保留数据，备份前先退出应用。
 
-Media folders are read-only. App data is stored in `user-data` beside the installation. Upgrades preserve it; interactive uninstall offers a cleanup choice. Exit the app before backing up.
+Media folders are read-only. Packaged macOS builds store data in `~/Library/Application Support/Movie Glacier`, outside the app bundle. Windows and development builds retain `user-data` beside the installation or in the project. Updates preserve data. Quit before making a backup.
 
-构建环境 / Build requirements：Windows 10/11 x64、Node.js 24、pnpm 11。
+构建环境 / Build requirements：macOS 或 Windows、Node.js 24、pnpm 11。
 
-```powershell
-pnpm install
+Mac 构建默认使用当前机器架构，另提供 Intel 构建命令。当前 Mac 包为本地 ad-hoc 签名，未做 Apple 公证，也未发布到上游 Releases。
+
+Mac builds default to the host architecture; an explicit Intel build is also available. Packaging runs in a temporary local folder to avoid iCloud/Finder attributes interfering with signing, then copies the DMG, ZIP and SHA256SUMS.txt into `release/`. These local builds use ad-hoc signing, are not Apple-notarized, and have not been published to upstream Releases.
+
+```sh
+pnpm install --frozen-lockfile
 pnpm build
+pnpm start
+
+# Unit tests and isolated native-app checks
 pnpm test
 pnpm test:smoke
+pnpm test:desktop
+pnpm test:metadata
+
+# Build on macOS (Apple Silicon or Intel host)
+pnpm dist:mac
+# Cross-build an Intel Mac installer on macOS
+pnpm dist:mac:intel
+# Build the Windows installer on Windows
 pnpm dist
 ```
+
+`test:desktop` uses 80 synthetic entries and locally generated fictional artwork. It checks shared poster transitions, scroll and focus restoration, keyboard shortcuts, modal focus, narrow layouts, reduced motion and macOS window reopening. `test:metadata` uses deterministic provider substitutes to check that verification and network failures leave other providers running; it does not verify live provider availability. All test data stays under ignored `.cache/` directories.
 
 ## 开源与第三方服务 · License and third-party services
 

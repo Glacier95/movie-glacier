@@ -127,3 +127,8 @@ test('rescan repairs automatic series classifications and preserves manual edits
   assert.equal(store.work(manual).titleZh, '我确认的片名');
   store.close();
 });
+
+
+test('TMDB does not accept an undated candidate for a known release year', () => {
+  assert.equal(chooseTmdbCandidate('Home', 2020, [{ id: 1, title: 'Home', originalTitle: 'Home', year: null, posterPath: null }]), null);
+});

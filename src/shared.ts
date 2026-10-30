@@ -86,7 +86,7 @@ export interface AppearanceSettings {
   backgroundBrightness: number;
 }
 export const appearanceDefaults: AppearanceSettings = {
-  panelBlur: 6, panelOpacity: 13, backgroundOpacity: 77, backgroundSaturation: 160, backgroundBrightness: 88
+  panelBlur: 16, panelOpacity: 68, backgroundOpacity: 77, backgroundSaturation: 160, backgroundBrightness: 88
 };
 export const backgroundBlurDefault = 5;
 export const appearanceControls: { key: keyof AppearanceSettings; group: 'panel' | 'background'; label: string; min: number; max: number; unit: string }[] = [
@@ -155,6 +155,8 @@ export interface MatchCandidate {
 }
 
 export interface Bridge {
+  readonly platform: string;
+  onMenuAction(callback: (action: 'search' | 'settings' | 'movie' | 'tv' | 'overview' | 'back') => void): () => void;
   listWorks(): Promise<Work[]>;
   getSettings(): Promise<PublicSettings>;
   setSettings(patch: Partial<PosterWallSettings & AppearanceSettings> & { language?: 'zh' | 'en'; roots?: string[]; playerPath?: string; proxyUrl?: string; backgroundBlur?: number; tmdbKey?: string; omdbKey?: string }): Promise<PublicSettings>;

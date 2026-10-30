@@ -128,6 +128,8 @@ export async function* discover(root: string): AsyncGenerator<DiscoveredMedia> {
       }
     }
     for (const entry of entries) {
+      // Finder sidecars and hidden trash folders are not playable media.
+      if (entry.name.startsWith('.') || entry.name === '__MACOSX') continue;
       const entryPath = path.join(folder, entry.name);
       if (entry.isDirectory()) {
         if (!SKIP_DIRS.has(entry.name.toLowerCase()) && entry.name.toLowerCase() !== 'bdmv') stack.push(entryPath);

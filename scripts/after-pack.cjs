@@ -1,7 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 exports.default = async function afterPack(context) {
+  if (context.electronPlatformName === 'darwin') {
+    // Finder/iCloud metadata on a generated bundle prevents codesigning.
+    const bundle = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
+    execFileSync('/usr/bin/xattr', ['-cr', bundle]);
+    return;
+  }
   if (context.electronPlatformName !== 'win32') return;
   const locales = path.join(context.appOutDir, 'locales');
   if (!fs.existsSync(locales)) return;

@@ -1,3 +1,4 @@
+import { electronExecutable } from './electron-path.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -29,7 +30,7 @@ store.close();
 
 const packaged = process.env.FILM_LIBRARY_PACKAGED === '1';
 const app = await electron.launch({
-  executablePath: path.resolve(packaged ? 'release/win-unpacked/Movie Glacier.exe' : 'node_modules/electron/dist/electron.exe'),
+  executablePath: electronExecutable(packaged),
   args: ['--no-sandbox', '--disable-gpu', ...(packaged ? [] : ['.'])],
   env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' }
 });
@@ -42,6 +43,7 @@ try {
   const nav = page.getByRole('navigation', { name: '影视类型' });
   const back = page.getByRole('button', { name: '返回片库', exact: true });
   const verifyReturn = async index => {
+    await page.locator('.poster-grid').evaluate(grid => Promise.all(grid.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))));
     const card = page.locator('.poster-open').nth(index);
     await card.scrollIntoViewIfNeeded();
     const title = await card.getAttribute('aria-label');
@@ -51,7 +53,8 @@ try {
     await page.locator('.detail-view').waitFor();
     assert.equal(await page.evaluate(() => scrollY), 0, 'details open at the top');
     await back.click();
-    await page.waitForFunction(y => Math.abs(scrollY - y) < 2, before);
+    try { await page.waitForFunction(y => Math.abs(scrollY - y) < 2, before); }
+    catch (error) { console.error({ before, after: await page.evaluate(() => scrollY), index }); throw error; }
     assert.equal(await page.getByRole('button', { name: title, exact: true }).isVisible(), true);
   };
   await verifyReturn(45);

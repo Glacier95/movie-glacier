@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+export function applicationDataDirectory(platform: NodeJS.Platform, packaged: boolean, appPath: string, executable: string, appData: string): string {
+  if (packaged && platform === 'darwin') return path.join(appData, 'Movie Glacier');
+  return path.join(packaged ? path.dirname(executable) : appPath, 'user-data');
+}
+
 /** Copy through a staging directory so an interrupted migration can be retried. */
 export function prepareDataDirectory(target: string, legacyDirectories: string[]): void {
   fs.mkdirSync(target, { recursive: true });

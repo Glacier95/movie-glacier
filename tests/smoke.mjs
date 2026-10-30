@@ -1,3 +1,4 @@
+import { electronExecutable } from './electron-path.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ const root = path.join(temp, 'media');
 const data = path.join(temp, 'app-data');
 const packaged = process.env.FILM_LIBRARY_PACKAGED === '1';
 const launchApp = () => electron.launch({
-  executablePath: packaged ? path.resolve('release/win-unpacked/Movie Glacier.exe') : path.resolve('node_modules/electron/dist/electron.exe'),
+  executablePath: electronExecutable(packaged),
   args: packaged ? ['--no-sandbox', '--disable-gpu'] : ['--no-sandbox', '--disable-gpu', '.'],
   env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' }, timeout: 30_000
 });
@@ -169,8 +170,9 @@ try {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.screenshot({ path: path.resolve('.cache/smoke-ambient-home.png'), animations: 'disabled' });
   await page.locator('.result-head').hover();
-  assert.equal(await page.locator('.ambient-layer-outgoing').count(), 1, 'the old color layer fades out');
-  await page.waitForTimeout(560);
+  await page.locator('.ambient-layer-outgoing').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('.ambient-layer-outgoing').count(), 1, 'the old color layer fades out after the hover debounce');
+  await page.locator('.ambient-layer-outgoing').waitFor({ state: 'detached' });
   assert.equal(await page.locator('.ambient-layer').count(), 0, 'outgoing layer is released after the fade');
   await fargoCard.click();
   await page.locator('.hero-poster img').waitFor();
@@ -185,11 +187,11 @@ try {
   await fargoCard.click({ button: 'right' });
   const cardMenu = page.getByRole('menu', { name: '电影快捷菜单' });
   assert.equal(await cardMenu.getByRole('menuitem').count(), 5);
-  assert.match(await cardMenu.innerText(), /在资源管理器中打开原位置.*Shooter字幕.*重新抓取元数据.*OMDb.*TMDB.*豆瓣/s);
+  assert.match(await cardMenu.innerText(), /(?:在资源管理器中打开原位置|在 Finder 中显示).*Shooter字幕.*重新抓取元数据.*OMDb.*TMDB.*豆瓣/s);
   await page.screenshot({ path: path.resolve('.cache/smoke-context-menu.png') });
   const fargoPath = (await page.evaluate(() => window.library.listWorks())).find(work => work.titleEn === 'Fargo').assets[0].path;
   await app.evaluate(({ shell }) => { globalThis.revealedMediaPath = ''; shell.showItemInFolder = value => { globalThis.revealedMediaPath = value; }; });
-  await cardMenu.getByRole('menuitem', { name: '在资源管理器中打开原位置' }).click();
+  await cardMenu.getByRole('menuitem', { name: process.platform === 'darwin' ? '在 Finder 中显示' : '在资源管理器中打开原位置' }).click();
   assert.equal(await app.evaluate(() => globalThis.revealedMediaPath), fargoPath);
   await app.evaluate(({ shell }) => { globalThis.openedSubtitleUrl = ''; shell.openExternal = async value => { globalThis.openedSubtitleUrl = value; }; });
   await fargoCard.click({ button: 'right' });
@@ -201,14 +203,16 @@ try {
   assert.ok((await page.evaluate(() => window.library.listScrapeLogs())).some(log =>
     log.source === 'omdb' && log.status === 'failed' && log.title === '冰血暴'));
   assert.equal(await page.locator('.poster-card').count(), 4, 'single-work refresh does not rescan the library');
-  await page.getByRole('button', { name: '全屏（F11）' }).click();
+  await app.evaluate(({ app, BrowserWindow }) => { app.focus({ steal: true }); BrowserWindow.getAllWindows()[0].focus(); });
+  await page.getByRole('button', { name: process.platform === 'darwin' ? '全屏（⌃⌘F）' : '全屏（F11）' }).click();
+  await page.waitForFunction(() => Boolean(document.querySelector('.app-shell.is-fullscreen')));
   assert.equal(await page.evaluate(() => window.library.isFullscreen()), true);
   await page.keyboard.press('Escape');
-  await page.waitForFunction(async () => !(await window.library.isFullscreen()));
+  await page.waitForFunction(async () => !(await window.library.isFullscreen()) && !document.querySelector('.app-shell.is-fullscreen'));
   await page.keyboard.press('F11');
-  await page.waitForFunction(async () => await window.library.isFullscreen());
+  await page.waitForFunction(async () => await window.library.isFullscreen() && Boolean(document.querySelector('.app-shell.is-fullscreen')));
   await page.keyboard.press('F11');
-  await page.waitForFunction(async () => !(await window.library.isFullscreen()));
+  await page.waitForFunction(async () => !(await window.library.isFullscreen()) && !document.querySelector('.app-shell.is-fullscreen'));
   const secondRoot = path.join(temp, 'other-media');
   fs.mkdirSync(secondRoot, { recursive: true });
   const secondMovie = path.join(secondRoot, 'Alien.1979.mkv');
@@ -252,9 +256,18 @@ try {
   assert.deepEqual(errors, []);
   await app.evaluate(({ BrowserWindow }) => { globalThis.hiddenScrapeWindow = new BrowserWindow({ show: false }); });
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 2);
-  const exited = app.waitForEvent('close', { timeout: 10_000 });
-  await page.close();
-  await exited;
+  if (process.platform === 'darwin') {
+    await page.close();
+    const newWindow = app.waitForEvent('window');
+    await app.evaluate(({ app }) => app.emit('activate'));
+    const restored = await newWindow;
+    await restored.locator('.brand').waitFor();
+    await app.close();
+  } else {
+    const exited = app.waitForEvent('close', { timeout: 10_000 });
+    await page.close();
+    await exited;
+  }
   app = await launchApp();
   const reopened = await app.firstWindow();
   await reopened.locator('.brand').waitFor({ timeout: 20_000 });
@@ -263,7 +276,7 @@ try {
   assert.equal((await reopened.evaluate(() => window.library.listWorks())).length, 6, 'relaunch keeps the indexed library');
   console.log('Electron smoke test passed: library workflows, main-window exit with hidden window, and no startup scan.');
 } catch (error) {
-  console.error('Smoke test failed:', String(error).slice(0, 1800));
+  console.error('Smoke test failed:', error.stack ?? String(error));
   process.exitCode = 1;
 } finally {
   if (app) await app.close();

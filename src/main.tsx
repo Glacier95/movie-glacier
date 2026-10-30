@@ -1,12 +1,15 @@
 import { t, message, isEnglish, locale, setLanguage, useLanguage } from './i18n';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { ArrowLeft, Check, ChevronDown, ExternalLink, Film, Folder, FolderOpen, HardDrive, KeyRound, ListChecks, LogIn, LogOut,
   Maximize2, Minimize2, Pencil, Play, Plus, RefreshCcw, Search, Settings2, SlidersHorizontal, Star, Tags, UserRound, X } from 'lucide-react';
 import type { ConnectionChecks, JobState, MatchCandidate, MediaAsset, MetadataSource, Person, PublicSettings, ScrapeLog, Work, WorkEdit } from './shared';
 import { backgroundBlurDefault, posterWallDefaults, posterWallControls, appearanceDefaults, appearanceControls, type AppearanceSettings, type PosterWallSettings } from './shared';
 import { matchesSearch } from './search';
 import './styles.css';
+
+const isMac = window.library.platform === 'darwin';
 
 const Overview = lazy(() => import('./Overview'));
 type Tab = 'movie' | 'tv' | 'overview';
@@ -99,6 +102,68 @@ function App() {
   const [directors, setDirectors] = useState<string[]>([]);
   const [cardMenu, setCardMenu] = useState<{ workId: number; x: number; y: number } | null>(null);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const activeTransition = useRef<ViewTransition | null>(null);
+  const navigationSequence = useRef(0);
+  const returningToLibrary = useRef(false);
+  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
+  function hoverCard(id: number | null) {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHoveredId(id), 110);
+  }
+  function cancelTransition() {
+    navigationSequence.current++;
+    activeTransition.current?.skipTransition();
+    activeTransition.current = null;
+    delete document.documentElement.dataset.transitioning;
+    document.querySelectorAll<HTMLElement>('[data-transition-poster]').forEach(element => {
+      element.style.removeProperty('view-transition-name');
+      delete element.dataset.transitionPoster;
+    });
+  }
+  function selectWork(nextId: number | null) {
+    cancelTransition();
+    const sequence = navigationSequence.current;
+    const workId = nextId ?? selectedId;
+    returningToLibrary.current = nextId === null;
+    window.clearTimeout(hoverTimer.current);
+    const findPoster = () => document.querySelector<HTMLElement>(
+      selectedId === null ? `[data-work-id="${workId}"] .poster-frame` : '.hero-poster');
+    const source = findPoster();
+    const update = () => {
+      if (sequence !== navigationSequence.current) return;
+      flushSync(() => { setSelectedId(nextId); setHoveredId(null); });
+      const target = document.querySelector<HTMLElement>(nextId === null
+        ? `[data-work-id="${workId}"] .poster-frame` : '.hero-poster');
+      if (target && activeTransition.current) {
+        target.style.viewTransitionName = 'active-poster';
+        target.dataset.transitionPoster = '';
+      }
+    };
+    const focus = () => document.querySelector<HTMLElement>(nextId === null
+      ? `[data-work-id="${workId}"] .poster-open` : '.back-button')?.focus({ preventScroll: true });
+    if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches || !source) {
+      update(); focus(); return;
+    }
+    document.documentElement.dataset.transitioning = 'true';
+    source.style.viewTransitionName = 'active-poster';
+    source.dataset.transitionPoster = '';
+    const transition = document.startViewTransition(update);
+    activeTransition.current = transition;
+    // Chromium can skip a transition when a native window is hidden or resized.
+    // Navigation must still complete, and every rejecting transition promise
+    // needs a handler when rapid keyboard navigation interrupts an animation.
+    void transition.ready.catch(() => {});
+    void transition.updateCallbackDone.catch(cause => {
+      if (sequence !== navigationSequence.current) return;
+      if (cause?.name === 'AbortError' || cause?.name === 'TimeoutError') update();
+      else setError(String(cause));
+    });
+    void transition.finished.catch(() => {}).finally(() => {
+      if (sequence !== navigationSequence.current) return;
+      cancelTransition(); focus();
+    });
+  }
   const [doubanMin, setDoubanMin] = useState(0);
   const [doubanMax, setDoubanMax] = useState(10);
   const [imdbMin, setImdbMin] = useState(0);
@@ -225,16 +290,19 @@ function App() {
     finally { setFavoritePending(current => current.filter(id => id !== work.id)); }
   }
   function personClick(person: Person) {
+    cancelTransition();
     pendingScroll.current = 0;
     setTab(selected?.mediaType ?? 'movie');
     resetFilters(); setSearch(personName(person)); setSelectedId(null);
   }
   function openDetail(workId: number) {
     libraryScroll.current[tab] = window.scrollY;
-    setHoveredId(null);
-    setSelectedId(workId);
+    selectWork(workId);
   }
   function navigate(next: Tab) {
+    cancelTransition();
+    window.clearTimeout(hoverTimer.current);
+    returningToLibrary.current = false;
     setHoveredId(null); setSortOpen(false); setCardMenu(null);
     if (next === tab && selectedId === null) {
       libraryScroll.current[tab] = 0;
@@ -256,11 +324,69 @@ function App() {
     void runJobAction(() => window.library.refreshWorkMetadata(workId, source));
   }
 
+  useEffect(() => {
+    const modalOpen = settingsOpen || settings.needsSetup || logsOpen || editing;
+    const action = (name: string) => {
+      if (modalOpen && name !== 'settings') return;
+      if (name === 'settings') { setSettingsOpen(true); return; }
+      if (name === 'search') {
+        cancelTransition();
+        flushSync(() => { setSelectedId(null); if (tab === 'overview') setTab('movie'); });
+        searchInput.current?.focus(); searchInput.current?.select();
+      } else if (name === 'back' && selectedId !== null) selectWork(null);
+      else if (name === 'movie' || name === 'tv' || name === 'overview') navigate(name);
+    };
+    const off = window.library.onMenuAction(action);
+    const keydown = (event: KeyboardEvent) => {
+      if (modalOpen || event.defaultPrevented) return;
+      if ((event.metaKey || event.ctrlKey) && ['f', ',', '[', '1', '2', '3'].includes(event.key)) {
+        event.preventDefault();
+        action(({ f: 'search', ',': 'settings', '[': 'back', '1': 'movie', '2': 'tv', '3': 'overview' } as Record<string, string>)[event.key]);
+      } else if (event.key === 'Escape' && selectedId !== null && !sortOpen && !cardMenu) {
+        event.preventDefault(); selectWork(null);
+      }
+    };
+    window.addEventListener('keydown', keydown);
+    return () => { off(); window.removeEventListener('keydown', keydown); };
+  }, [selectedId, tab, settingsOpen, settings.needsSetup, logsOpen, editing, sortOpen, cardMenu]);
+
+  useEffect(() => {
+    if (!settingsOpen && !settings.needsSetup && !logsOpen && !editing) return;
+    const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
+    const dialog = dialogs[dialogs.length - 1];
+    if (!dialog) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () => [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex="0"]')]
+      .filter(element => element.getClientRects().length > 0);
+    focusable()[0]?.focus({ preventScroll: true });
+    const trap = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopPropagation();
+        if (logsOpen) setLogsOpen(false);
+        else if (editing) setEditing(false);
+        else if (!settings.needsSetup) { setSettingsOpen(false); setBlurPreview(null); setWallPreview(null); setAppearancePreview(null); }
+      }
+      if (event.key !== 'Tab') return;
+      const controls = focusable(), first = controls[0], last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', trap, true);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', trap, true); previousFocus?.focus({ preventScroll: true }); };
+  }, [settingsOpen, settings.needsSetup, logsOpen, editing]);
+
   const appearance = appearancePreview ?? settings;
-  return <div className="app-shell" style={{ '--ambient-blur': `${blurPreview ?? settings.backgroundBlur}px`, '--panel-blur': `${appearance.panelBlur}px`, '--panel-opacity': appearance.panelOpacity / 100, '--ambient-opacity': appearance.backgroundOpacity / 100, '--ambient-saturation': appearance.backgroundSaturation / 100, '--ambient-brightness': appearance.backgroundBrightness / 100 } as React.CSSProperties}>
+  return <div className={`app-shell ${isMac ? 'platform-mac' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} style={{ '--ambient-blur': `${blurPreview ?? settings.backgroundBlur}px`, '--panel-blur': `${appearance.panelBlur}px`, '--panel-opacity': appearance.panelOpacity / 100, '--ambient-opacity': appearance.backgroundOpacity / 100, '--ambient-saturation': appearance.backgroundSaturation / 100, '--ambient-brightness': appearance.backgroundBrightness / 100 } as React.CSSProperties}>
     {tab !== 'overview' && <AmbientBackdrop source={ambientSource} inDetail={Boolean(selected)}/>}
+    {isMac && !fullscreen && <div className="window-titlebar" aria-hidden="true"><span>Movie Glacier</span></div>}
     <header className="topbar">
-      <div className="brand" onClick={() => setSelectedId(null)}><div className="brand-mark"><Film size={21} strokeWidth={1.8}/></div><div className="brand-copy"><span>Movie Glacier</span><small className="app-version">v{__APP_VERSION__}</small></div></div>
+      <div className="brand" role="button" tabIndex={0} aria-label="Movie Glacier" onClick={() => selectWork(null)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectWork(null); } }}><div className="brand-mark"><Film size={21} strokeWidth={1.8}/></div><div className="brand-copy"><span>Movie Glacier</span><small className="app-version">v{__APP_VERSION__}</small></div></div>
       <nav className="main-tabs" aria-label={t("影视类型")}>
         <button className={tab === 'movie' ? 'active' : ''} onClick={() => navigate('movie')}>Movies <span>{works.filter(work => work.mediaType === 'movie').length}</span></button>
         <button className={tab === 'tv' ? 'active' : ''} onClick={() => navigate('tv')}>Series <span>{works.filter(work => work.mediaType === 'tv').length}</span></button>
@@ -269,16 +395,16 @@ function App() {
       <div className="top-actions">
 
         <button className="icon-button" title={t("设置")} onClick={() => setSettingsOpen(true)}><Settings2 size={21}/></button>
-        <button className="icon-button" title={fullscreen ? t("退出全屏（F11）") : t("全屏（F11）")} onClick={() => void window.library.toggleFullscreen()}>{fullscreen ? <Minimize2 size={19}/> : <Maximize2 size={19}/>}</button>
+        <button className="icon-button" title={isMac ? (fullscreen ? t("退出全屏（⌃⌘F）") : t("全屏（⌃⌘F）")) : fullscreen ? t("退出全屏（F11）") : t("全屏（F11）")} onClick={() => void window.library.toggleFullscreen()}>{fullscreen ? <Minimize2 size={19}/> : <Maximize2 size={19}/>}</button>
 
       </div>
     </header>
 
     <main className="main-content">
-      {selected ? <Detail work={selected} topDate={settings.top250UpdatedAt} imdbTopDate={settings.imdbTop250UpdatedAt} onBack={() => setSelectedId(null)} onPerson={personClick} onEdit={() => setEditing(true)}
-        onTop250={() => { pendingScroll.current = 0; setSelectedId(null); setTop250Only(true); setFiltersOpen(true); }} onImdbTop250={() => { pendingScroll.current = 0; setSelectedId(null); setImdbTop250Only(true); setFiltersOpen(true); }} onPlay={asset => void run(() => window.library.play(asset.id))}/>
+      {selected ? <Detail work={selected} topDate={settings.top250UpdatedAt} imdbTopDate={settings.imdbTop250UpdatedAt} onBack={() => selectWork(null)} onPerson={personClick} onEdit={() => setEditing(true)}
+        onTop250={() => { cancelTransition(); pendingScroll.current = 0; setSelectedId(null); setTop250Only(true); setFiltersOpen(true); }} onImdbTop250={() => { cancelTransition(); pendingScroll.current = 0; setSelectedId(null); setImdbTop250Only(true); setFiltersOpen(true); }} onPlay={asset => void run(() => window.library.play(asset.id))}/>
       : tab === 'overview' ? <Suspense fallback={<div className="empty-state">{t("加载中…")}</div>}><Overview works={works} wallSettings={wallPreview ?? settings}/></Suspense> : <>
-        <div className="page-intro"><h1>{tab === 'movie' ? 'Movies' : 'Series'}<span className="heading-count">{typeWorks.length}</span></h1></div>
+        <div className="page-intro"><div className="eyebrow">{t("私人放映室")}</div><h1>{tab === 'movie' ? 'Movies' : 'Series'}<span className="heading-count">{typeWorks.length}</span></h1><p>{t("好电影，值得慢慢收藏。")}</p></div>
         <div className="toolbar">
           <label className="search-box"><Search size={18}/><input ref={searchInput} value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索电影、导演或演员（中英文）")}/>{search && <button className="search-clear" type="button" aria-label={t("清空搜索")} title={t("清空搜索")} onClick={() => { setSearch(''); searchInput.current?.focus(); }}><X size={16}/></button>}</label>
           <button className={`toolbar-button favorites-filter ${favoritesOnly ? 'selected' : ''}`} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(value => !value)}><Star size={17} fill={favoritesOnly ? 'currentColor' : 'none'}/> {t(" 收藏")}</button>
@@ -305,15 +431,23 @@ function App() {
         {!jobDismissed && job.running && <div className="job-strip"><RefreshCcw size={15} className="spin"/><span>{libraryMessage(job.phase, works) || t("正在更新")}</span><em>{job.done}{job.total ? ` / ${job.total}` : ''}</em><button className="job-dismiss" type="button" aria-label={t("关闭更新提示")} title={t("关闭提示")} onClick={() => setJobDismissed(true)}><X size={16}/></button></div>}
         {!jobDismissed && !job.running && job.message && <div className={`job-strip ${job.failures ? 'warning' : ''}`}><Check size={15}/><span>{libraryMessage(job.message, works)}</span><em>{t("新增资源 ")}{job.addedAssets} {t(" · 本次失败 ")}{job.failures}</em><button className="job-dismiss" type="button" aria-label={t("关闭更新提示")} title={t("关闭提示")} onClick={() => setJobDismissed(true)}><X size={16}/></button></div>}
         <div className="result-head"><span>{isEnglish() ? `${filtered.length} ${tab === 'tv' ? 'series' : 'movies'}` : <>{filtered.length} 部{tab === 'tv' ? '剧集' : '电影'}</>}</span>{favoritesOnly && <button className="tiny-link" onClick={() => setFavoritesOnly(false)}>{t("已收藏 ×")}</button>}{top250Only && <button className="tiny-link" onClick={() => setTop250Only(false)}>{t("豆瓣 Top250 ×")}</button>}{imdbTop250Only && <button className="tiny-link" onClick={() => setImdbTop250Only(false)}>IMDb Top 250 ×</button>}</div>
-        {filtered.length ? <div className="poster-grid">{filtered.map((work, index) => <article className="poster-card" key={work.id} style={{ '--card-index': Math.min(index, 12) } as React.CSSProperties} onPointerEnter={() => setHoveredId(work.id)} onPointerLeave={() => setHoveredId(null)} onContextMenu={event => openCardMenu(event, work.id)}>
-          <button className="poster-open" aria-label={t("查看《{0}》详情", displayTitle(work))} onClick={() => openDetail(work.id)}><div className="poster-frame">{poster(work) ? <img src={poster(work)} alt={t("{0}海报", displayTitle(work))}/> : <div className="poster-placeholder"><Film size={34}/><span>{displayTitle(work)}</span></div>}{work.assets.every(asset => !asset.available) && <div className="poster-offline">{t("资源离线")}</div>}<div className="poster-play"><Play fill="currentColor" size={20}/></div></div><div className="poster-title">{posterTitle(work)}</div><div className="poster-subtitle">{posterSubtitle(work)}</div></button>
+        {filtered.length ? <div className="poster-grid" data-restoring={returningToLibrary.current}>{filtered.map((work, index) => <article className="poster-card" data-work-id={work.id} key={work.id} style={{ '--card-index': Math.min(index, 8) } as React.CSSProperties} onPointerEnter={() => hoverCard(work.id)} onPointerMove={event => {
+            if (event.pointerType !== 'mouse' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const card = event.currentTarget, bounds = card.getBoundingClientRect();
+            const x = (event.clientX - bounds.left) / bounds.width, y = (event.clientY - bounds.top) / bounds.height;
+            card.style.setProperty('--tilt-x', `${(0.5 - y) * 5}deg`);
+            card.style.setProperty('--tilt-y', `${(x - 0.5) * 5}deg`);
+            card.style.setProperty('--shine-x', `${x * 100}%`);
+            card.style.setProperty('--shine-y', `${y * 100}%`);
+          }} onPointerLeave={event => { event.currentTarget.style.removeProperty('--tilt-x'); event.currentTarget.style.removeProperty('--tilt-y'); hoverCard(null); }} onContextMenu={event => openCardMenu(event, work.id)}>
+          <button className="poster-open" aria-label={t("查看《{0}》详情", displayTitle(work))} onClick={() => openDetail(work.id)}><div className="poster-frame">{poster(work) ? <img src={poster(work)} alt={t("{0}海报", displayTitle(work))} loading="lazy" decoding="async" onError={event => { event.currentTarget.style.opacity = '0'; }}/> : <div className="poster-placeholder"><Film size={34}/><span>{displayTitle(work)}</span></div>}{work.assets.every(asset => !asset.available) && <div className="poster-offline">{t("资源离线")}</div>}<div className="poster-play"><Play fill="currentColor" size={20}/></div>{(work.ratingImdb !== null || work.ratingDouban !== null) && <div className="poster-score"><Star size={11} fill="currentColor"/><b>{(work.ratingImdb ?? work.ratingDouban)?.toFixed(1)}</b><span>{work.ratingImdb !== null ? 'IMDb' : t("豆瓣")}</span></div>}</div><div className="poster-title">{posterTitle(work)}</div><div className="poster-subtitle">{posterSubtitle(work)}</div></button>
           <button className={`poster-favorite ${work.favorite ? 'on' : ''}`} disabled={favoritePending.includes(work.id)} aria-label={work.favorite ? t("取消收藏《{0}》", displayTitle(work)) : t("收藏《{0}》", displayTitle(work))} aria-pressed={work.favorite} title={work.favorite ? t("取消收藏") : t("加入收藏")} onClick={() => void toggleFavorite(work)}><Star size={19} strokeWidth={2.1} fill={work.favorite ? 'currentColor' : 'none'}/></button>
         </article>)}</div>
         : <div className="empty-state"><div className="empty-icon"><Film size={34}/></div><h2>{!settings.roots.length ? t("从你的影视目录开始") : typeWorks.length ? t("没有找到符合条件的作品") : t("这里还没有内容")}</h2><p>{!settings.roots.length ? t("选择一个存放电影或剧集的文件夹，建立属于自己的片库。") : typeWorks.length ? t("试试调整搜索或筛选条件。") : t("把影片放入已设置的目录，然后点击更新库。")}</p><button className="secondary-button" onClick={() => setSettingsOpen(true)}>{!settings.roots.length ? t("选择影视目录") : t("设置")}</button></div>}
       </>}
     </main>
     {cardMenu && <div className="card-context-menu" role="menu" aria-label={t("电影快捷菜单")} style={{ left: cardMenu.x, top: cardMenu.y }}>
-      <button role="menuitem" onClick={() => { const id = cardMenu.workId; setCardMenu(null); void run(() => window.library.openWorkLocation(id)); }}><FolderOpen size={16}/> {t(" 在资源管理器中打开原位置")}</button>
+      <button role="menuitem" onClick={() => { const id = cardMenu.workId; setCardMenu(null); void run(() => window.library.openWorkLocation(id)); }}><FolderOpen size={16}/> {isMac ? t("在 Finder 中显示") : t(" 在资源管理器中打开原位置")}</button>
       <button role="menuitem" onClick={() => { const id = cardMenu.workId; setCardMenu(null); void run(() => window.library.openShooterSubtitles(id)); }}><ExternalLink size={16}/> {t(" Shooter字幕")}</button>
       <div className="context-menu-divider"/><div className="context-menu-heading">{t("重新抓取元数据")}</div>
       <button role="menuitem" disabled={job.running} onClick={() => refreshCard(cardMenu.workId, 'omdb')}><RefreshCcw size={15}/> OMDb</button>
@@ -343,7 +477,7 @@ function Detail({ work, topDate, imdbTopDate, onBack, onPerson, onEdit, onTop250
     <div className="detail-actions"><button className="back-button" onClick={onBack}><ArrowLeft size={19}/> {t(" 返回片库")}</button><button className="secondary-button small" onClick={onEdit}><Pencil size={15}/> {t(" 编辑资料")}</button></div>
     <div className="hero">
       <div className="hero-inner"><div className="hero-eyebrow">{work.mediaType === 'movie' ? 'FILM' : 'SERIES'} {work.year && `· ${work.year}`}</div><h1>{englishTitle(work)}</h1>{titleZh && titleZh !== englishTitle(work) && <div className="hero-original">{titleZh}</div>}<div className="hero-facts">{work.year && <span>{work.year}</span>}{work.runtime && <span>{work.runtime} {t(" 分钟")}</span>}{(isEnglish() ? englishTags : work.genres).slice(0, 3).map(genre => <span key={genre}>{genre}</span>)}</div><div className="hero-ratings"><span><Star size={16} fill="currentColor"/> {t(" 豆瓣")}{work.ratingSeason !== null ? t("·第{0}季", work.ratingSeason) : ''} {work.ratingDouban ?? '—'}</span><span><Star size={16} fill="currentColor"/> IMDb {work.ratingImdb ?? '—'}</span>{work.topRank && <button className="top-badge" title={`${t("榜单更新于 ")}${humanDate(topDate)}`} onClick={onTop250}>{t("豆瓣 Top250 · 第 ")}{work.topRank} {t(" 名")}</button>}{work.imdbTopRank && <button className="top-badge" title={`${t("榜单更新于 ")}${humanDate(imdbTopDate)}`} onClick={onImdbTop250}>{t("IMDb Top 250 · 第 ")}{work.imdbTopRank} {t(" 名")}</button>}</div>{work.mediaType === 'movie' && movieAsset && <><button className="play-button" disabled={!movieAsset.available} onClick={() => onPlay(movieAsset)}><Play size={19} fill="currentColor"/> {movieAsset.available ? t("播放电影") : t("资源离线")}</button><div className="hero-source" title={movieAsset.path}><span className="hero-source-name">{movieAsset.kind === 'bdmv' ? t("源文件夹") : t("源文件")}：{sourceName(movieAsset)}</span><span className="hero-source-size">{gigabytes(movieAsset.size)}</span></div></>}</div>
-      <div className="hero-poster">{poster(work) ? <img src={poster(work)} alt={t("{0}海报", displayTitle(work))}/> : <div className="hero-poster-placeholder"><Film size={42}/><span>{displayTitle(work)}</span></div>}</div>
+      <div className="hero-poster">{poster(work) ? <img src={poster(work)} alt={t("{0}海报", displayTitle(work))} loading="lazy" decoding="async" onError={event => { event.currentTarget.style.opacity = '0'; }}/> : <div className="hero-poster-placeholder"><Film size={42}/><span>{displayTitle(work)}</span></div>}</div>
     </div>
     <div className="detail-layout"><div className="detail-primary">
       {(overviewEn || overviewZh) && <section><h2>{t("剧情简介")}</h2><div className="overview-stack">{overviewEn && <div><h3>English</h3><p className="overview">{overviewEn}</p></div>}{overviewZh && <div><h3>{t("中文")}</h3><p className="overview">{overviewZh}</p></div>}</div></section>}
@@ -395,18 +529,18 @@ function SettingsModal({ onAppearancePreview, onWallPreview, job, onLogs, settin
     catch (cause) { onError(String(cause)); }
     finally { setChecking(false); }
   }
-  return <div className="modal-backdrop" onMouseDown={onboarding ? undefined : onClose}><div className="modal settings-modal" role="dialog" aria-label={onboarding ? t("首次配置") : t("设置")} onMouseDown={event => event.stopPropagation()}><div className="modal-header"><div><div className="eyebrow">{onboarding ? 'WELCOME TO MOVIE GLACIER' : 'PREFERENCES'}</div><h2>{onboarding ? t("首次配置") : t("设置")}</h2></div>{!onboarding && <button className="icon-button" onClick={onClose}><X size={22}/></button>}</div><div className="modal-scroll">
+  return <div className="modal-backdrop" onMouseDown={onboarding ? undefined : onClose}><div className="modal settings-modal" role="dialog" aria-modal="true" aria-label={onboarding ? t("首次配置") : t("设置")} onMouseDown={event => event.stopPropagation()}><div className="modal-header"><div><div className="eyebrow">{onboarding ? 'WELCOME TO MOVIE GLACIER' : 'PREFERENCES'}</div><h2>{onboarding ? t("首次配置") : t("设置")}</h2></div>{!onboarding && <button className="icon-button" onClick={onClose}><X size={22}/></button>}</div><div className="modal-scroll">
     {!onboarding && <section className="settings-quick-actions"><button className="secondary-button" onClick={onLogs}><ListChecks size={17}/>{t("抓取日志")}</button><button className="primary-button" disabled={job.running || !settings.roots.length} onClick={() => void onRun(window.library.updateLibrary)}><RefreshCcw size={17} className={job.running ? 'spin' : ''}/>{job.running ? t("正在更新") : t("更新库")}</button></section>}
     <section><div className="modal-section-head"><h3>{t('界面语言')}</h3></div><div className="language-options" role="group" aria-label={t('界面语言')}><button type="button" aria-pressed={language === 'zh'} onClick={() => chooseLanguage('zh')}>{isEnglish() ? 'Chinese' : '中文'}</button><button type="button" aria-pressed={language === 'en'} onClick={() => chooseLanguage('en')}>English</button></div><p className="helper">{t('保存后切换界面语言。英文模式隐藏中文片名、中文简介与中文标签。')}</p></section>
     {onboarding && <p className="setup-intro">{t("设置好目录和至少一种资料来源后，软件会自动识别文件名。TMDB 无法连接时会自动使用 OMDb 抓取海报、演职员和 IMDb 评分；OMDb 无需 IMDb 账号。")}</p>}
     <section><div className="modal-section-head"><h3><Folder size={18}/>{t("影视目录 ")}<span className="root-count">{roots.length} {t(" 个")}</span></h3><button className="tiny-link" onClick={async () => { const folders = await window.library.chooseFolders(); setRoots(current => [...new Set([...current, ...folders])]); }}><Plus size={16}/>{t("添加文件夹")}</button></div><p className="helper">{t("可以添加多个本地文件夹；以后随时回来继续添加。扫描时会检查全部目录，包括新放入的影片。包含关系的目录会自动合并，移除目录不会删除文件。")}</p>{roots.length ? <div className="root-list">{roots.map(root => <div key={root}><Folder size={18}/><span title={root}>{root}</span><button title={t("移除目录")} aria-label={t("移除目录 {0}", root)} onClick={() => setRoots(current => current.filter(item => item !== root))}><X size={16}/></button></div>)}</div> : <div className="empty-row">{t("尚未选择目录")}</div>}</section>
-    <section><div className="modal-section-head"><h3><Play size={18}/>PotPlayer</h3><button className="tiny-link" onClick={async () => { const player = await window.library.choosePlayer(); if (player) setPlayerPath(player); }}>{t("选择程序")}</button></div><div className="path-display">{playerPath || t("尚未找到 PotPlayer")}</div></section>
+    <section><div className="modal-section-head"><h3><Play size={18}/>{isMac ? t("播放器") : 'PotPlayer'}</h3><button className="tiny-link" onClick={async () => { const player = await window.library.choosePlayer(); if (player) setPlayerPath(player); }}>{t("选择程序")}</button></div><div className="path-display">{playerPath === 'system' || (!playerPath && isMac) ? t("系统默认播放器") : playerPath || t("尚未找到 PotPlayer")}</div>{isMac && <><p className="helper">{t("自动识别 IINA 或 VLC，也可以选择其他 .app 播放器。")}</p><button className="tiny-link" onClick={() => setPlayerPath('system')}>{t("使用系统默认播放器")}</button></>}</section>
     <section className="ambient-settings"><div className="modal-section-head"><h3>{t("主页与详情 · 海报背景")}</h3><button className="tiny-link" onClick={() => resetAppearance('background')}>{t("恢复默认效果")}</button></div><p className="helper">{t("调节海报色彩背景的模糊程度。拖动时可实时预览，保存后在主页和详情页生效。")}</p><label className="blur-control"><div className="wall-control-heading"><span>{t("背景模糊程度")}</span><output className="blur-value">{backgroundBlur} px</output></div><input type="range" min="0" max="50" step="1" aria-label={t("背景模糊程度")} value={backgroundBlur} style={{ '--blur-progress': `${backgroundBlur / 50 * 100}%` } as React.CSSProperties} onChange={event => { const value = Number(event.target.value); setBackgroundBlur(value); onBlurPreview(value); }}/><span><small>{t("清晰")}</small><small>{t("柔和")}</small></span></label>{appearanceSliders('background')}</section>
     <section className="panel-settings"><div className="modal-section-head"><h3>{t("界面面板 · 毛玻璃")}</h3><button className="tiny-link" onClick={() => resetAppearance('panel')}>{t("恢复默认效果")}</button></div><p className="helper">{t("控制 Overview 图表卡片、设置和其他面板的毛玻璃。降低模糊和不透明度可看清背景；拖动预览，保存保留，取消恢复。")}</p>{appearanceSliders('panel')}</section>
     <section className="wall-settings"><div className="modal-section-head"><h3>{t("Overview · 海报墙")}</h3><button className="tiny-link" onClick={() => previewWall({ ...posterWallDefaults })}>{t("恢复默认效果")}</button></div><p className="helper">{t("调整 Overview 错位滚动海报墙，拖动时实时预览，保存后保留；取消将恢复原值。滚动速度 100% 为基准速度，0% 为静止。")}</p>
       {posterWallControls.map(control => <label className="blur-control" key={control.key}><div className="wall-control-heading"><span>{t(control.label)}</span><output className="blur-value">{wallSettings[control.key]} {control.unit}</output></div><input type="range" min={control.min} max={control.max} step="1" aria-label={t(control.label)} value={wallSettings[control.key]} style={{ '--blur-progress': `${(wallSettings[control.key] - control.min) / (control.max - control.min) * 100}%` } as React.CSSProperties} onChange={event => previewWall({ ...wallSettings, [control.key]: Number(event.target.value) })}/><span><small>{control.min} {control.unit}</small><small>{control.max} {control.unit}</small></span></label>)}
     </section>
-    <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("网络连接")}</h3></div><p className="helper">{t("代理地址留空时按 Windows 网络设置连接；没有系统代理时会直连。仅在当前电脑直连失败时填写本地 HTTP 或 SOCKS5 代理地址。此设置用于 TMDB、OMDb 和 IMDb 榜单请求。")}</p><label className="setting-label">{t("代理地址（可选）")}<input value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder={t("留空直连；或填写 http://127.0.0.1:7890")} autoComplete="off"/></label></section>
+    <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("网络连接")}</h3></div><p className="helper">{t("代理地址留空时按系统网络设置连接；没有系统代理时会直连。仅在当前电脑直连失败时填写本地 HTTP 或 SOCKS5 代理地址。此设置用于 TMDB、OMDb 和 IMDb 榜单请求。")}</p><label className="setting-label">{t("代理地址（可选）")}<input value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder={t("留空直连；或填写 http://127.0.0.1:7890")} autoComplete="off"/></label></section>
     <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("TMDB · 海报与英文资料（可选）")}</h3><button className="tiny-link" onClick={() => void window.library.openHelp('tmdb')}><ExternalLink size={14}/>{t("打开申请页面")}</button></div><p className="helper">{t("1. 注册或登录 TMDB。2. 进入账户设置 → API，申请访问凭据。3. 复制 ")}<strong>API Read Access Token</strong>{t("（较长的一串字符），粘贴到下方。TMDB 在当前网络不可达时，软件会改用 OMDb。")}</p><label className="setting-label">{t("TMDB 读取令牌 ")}<span>{settings.hasTmdbKey ? t("✓ 已加密保存") : t("未配置")}</span><input type="password" value={tmdbKey} onChange={event => setTmdbKey(event.target.value)} placeholder={settings.hasTmdbKey ? t("已保存；留空保持原值，输入新令牌可更换") : t("粘贴 TMDB API Read Access Token")} autoComplete="off"/></label></section>
     <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("OMDb · 备用资料源")}</h3><button className="tiny-link" onClick={() => void window.library.openHelp('omdb')}><ExternalLink size={14}/>{t("打开申请页面")}</button></div><p className="helper">{t("1. 打开 OMDb 的 Key 申请页，选择免费方案并填写邮箱。2. 在收到的邮件中激活 Key。3. 把 Key 粘贴到下方。可获取英文片名、海报、简介、演职员和 IMDb 评分；无需 IMDb 账号。无代理电脑请先点击下方“测试连接与凭据”。")}</p><label className="setting-label">OMDb API Key <span>{settings.hasOmdbKey ? t("✓ 已加密保存") : t("未配置")}</span><input type="password" value={omdbKey} onChange={event => setOmdbKey(event.target.value)} placeholder={settings.hasOmdbKey ? t("已保存；留空保持原值，输入新 Key 可更换") : t("粘贴 OMDb API Key")} autoComplete="off"/></label></section>
     <section><div className="modal-section-head"><h3><ListChecks size={18}/>{t("检测资料源连接")}</h3><button className="secondary-button small" disabled={checking} onClick={() => void testConnection()}>{checking ? t("检测中…") : t("测试连接与凭据")}</button></div><p className="helper">{t("会使用上方当前输入的令牌和代理地址；留空的令牌沿用已保存值。检测不会修改设置。")}</p>{checks && <><div className="connection-results"><div className={checks.tmdb.ok ? 'ok' : 'fail'}><strong>TMDB {checks.tmdb.ok ? t("成功") : t("失败")}</strong><span>{message(checks.tmdb.message)}</span></div><div className={checks.omdb.ok ? 'ok' : 'fail'}><strong>OMDb {checks.omdb.ok ? t("成功") : t("失败")}</strong><span>{message(checks.omdb.message)}</span></div></div>{!checks.tmdb.ok && checks.omdb.ok && <p className="helper">{t("OMDb 已可用；TMDB 失败不会阻止电影入库与基础资料抓取。")}</p>}</>}</section>
@@ -422,7 +556,7 @@ function LogsModal({ works, logs, job, onClose, onRetry }: { works: Work[]; logs
   const shown = filter === 'all' ? logs : logs.filter(item => item.status === filter);
   const label: Record<ScrapeLog['status'], string> = { pending: t("待处理"), running: t("抓取中"), done: t("成功"), failed: t("失败"), skipped: t("跳过") };
   const source: Record<ScrapeLog['source'], string> = { tmdb: 'TMDB', omdb: 'OMDb', douban: t("豆瓣") };
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal logs-modal" role="dialog" aria-label={t("抓取日志")} onMouseDown={event => event.stopPropagation()}>
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal logs-modal" role="dialog" aria-modal="true" aria-label={t("抓取日志")} onMouseDown={event => event.stopPropagation()}>
     <div className="modal-header"><div><div className="eyebrow">METADATA ACTIVITY</div><h2>{t("抓取日志")}</h2></div><button className="icon-button" aria-label={t("关闭日志")} onClick={onClose}><X size={22}/></button></div>
     <div className="log-summary"><span>{t("成功影片 ")}{logs.filter(item => item.status === 'done').length}</span><span>{t("失败影片 ")}{logs.filter(item => item.status === 'failed').length}</span><span>{t("当前待处理 ")}{logs.filter(item => item.status === 'pending' || item.status === 'running').length}</span></div>
     <div className="log-filters">{(['all', 'failed', 'done', 'pending', 'skipped'] as const).map(status => <button key={status} className={filter === status ? 'active' : ''} onClick={() => setFilter(status)}>{status === 'all' ? t("全部") : label[status]}</button>)}</div>
@@ -450,7 +584,7 @@ function EditModal({ work, onClose, onSaved, onIgnored, onError }: { work: Work;
     catch (error) { onError(String(error)); }
     finally { setBusy(false); }
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal edit-modal" role="dialog" aria-label={t("编辑资料")} onMouseDown={event => event.stopPropagation()}><div className="modal-header"><div><div className="eyebrow">EDIT MOVIE DETAILS</div><h2>{t("编辑资料")}</h2></div><button className="icon-button" onClick={onClose}><X size={22}/></button></div><div className="modal-scroll">
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal edit-modal" role="dialog" aria-modal="true" aria-label={t("编辑资料")} onMouseDown={event => event.stopPropagation()}><div className="modal-header"><div><div className="eyebrow">EDIT MOVIE DETAILS</div><h2>{t("编辑资料")}</h2></div><button className="icon-button" onClick={onClose}><X size={22}/></button></div><div className="modal-scroll">
     <p className="helper">{t("文件名已自动识别。资料对应错了时，在这里搜索并选择正确的 TMDB 条目；自定义文字会保留到下次资料刷新。")}</p>
     <section><div className="modal-section-head"><h3>{t("匹配资料来源")}</h3></div><div className="match-search"><input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索电影或剧集名称")} onKeyDown={event => { if (event.key === 'Enter') void searchSource(); }}/><button disabled={busy} onClick={() => void searchSource()}><Search size={16}/>{t("搜索 TMDB")}</button></div>{candidates.map(candidate => <button className={`candidate ${edit.tmdbId === candidate.id ? 'chosen' : ''}`} key={candidate.id} onClick={() => patch({ tmdbId: candidate.id })}><span>{isEnglish() ? candidate.originalTitle : candidate.title}<small>{candidate.originalTitle} · {candidate.year ?? t("未知年份")} · TMDB #{candidate.id}</small></span>{edit.tmdbId === candidate.id && <Check size={17}/>}</button>)}<p className="helper">{t("当前 TMDB ID：")}{edit.tmdbId ?? t("未匹配")}{t("。选择新条目后，保存时自动更新海报和演职员；如还想自定义片名，可保存后再次编辑。")}</p></section>
     <section><div className="edit-fields">{!isEnglish() && <label className="setting-label">{t("中文片名")}<input value={edit.titleZh} onChange={event => patch({ titleZh: event.target.value })}/></label>}<label className="setting-label">{t("英文片名")}<input value={edit.titleEn} onChange={event => patch({ titleEn: event.target.value })}/></label><label className="setting-label">{t("年份")}<input type="number" min="1888" max="2100" value={edit.year ?? ''} onChange={event => patch({ year: event.target.value ? Number(event.target.value) : null })}/></label></div><label className="setting-label">{t("剧情简介")}<textarea value={isEnglish() && hasChineseText(edit.overview) ? '' : edit.overview} onChange={event => patch({ overview: event.target.value })} rows={4}/></label></section>

@@ -3,6 +3,12 @@ import type { Bridge, JobState } from '../src/shared.js';
 
 const invoke = <T,>(channel: string, ...args: unknown[]): Promise<T> => ipcRenderer.invoke(channel, ...args) as Promise<T>;
 const bridge: Bridge = {
+  platform: process.platform,
+  onMenuAction: callback => {
+    const listener = (_event: unknown, action: Parameters<typeof callback>[0]) => callback(action);
+    ipcRenderer.on('menuAction', listener);
+    return () => ipcRenderer.removeListener('menuAction', listener);
+  },
   listWorks: () => invoke('listWorks'),
   getSettings: () => invoke('getSettings'),
   setSettings: patch => invoke('setSettings', patch),

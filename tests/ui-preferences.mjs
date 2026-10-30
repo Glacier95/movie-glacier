@@ -1,3 +1,4 @@
+import { electronExecutable } from './electron-path.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -17,7 +18,7 @@ store.setWorkFields(id, { titleEn: 'Ex Machina', titleZh: '机械姬', doubanTit
 store.putAsset({ workId: id, root: media, path: file, kind: 'file', season: null, episode: null, size: 100, mtimeMs: 1 }, Date.now());
 store.setRoots([media]);
 store.close();
-const launch = () => electron.launch({ executablePath: path.resolve('node_modules/electron/dist/electron.exe'), args: ['--no-sandbox', '--disable-gpu', '.'], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' } });
+const launch = () => electron.launch({ executablePath: electronExecutable(false), args: ['--no-sandbox', '--disable-gpu', '.'], env: { ...process.env, FILM_LIBRARY_DATA_DIR: data, FILM_LIBRARY_SMOKE: '1' } });
 let app;
 try {
   app = await launch();

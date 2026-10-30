@@ -13,7 +13,8 @@ import { Store } from './store.js';
 import { Douban } from './douban.js';
 import { fetchImdbTop250, openImdbVerification } from './imdb.js';
 import { shooterSubtitleUrl } from './shooter.js';
-import { prepareDataDirectory } from './data-directory.js';
+import { applicationDataDirectory, prepareDataDirectory } from './data-directory.js';
+import { playerCommand } from './player.js';
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 let store: Store;
@@ -45,6 +46,12 @@ function networkFailure(error: unknown): boolean {
 }
 
 function discoverPlayer(): string {
+  if (process.platform === 'darwin') {
+    return [app.getPath('home') + '/Applications', '/Applications']
+      .flatMap(folder => ['IINA.app', 'VLC.app'].map(name => path.join(folder, name)))
+      .find(candidate => fs.existsSync(candidate)) ?? '';
+  }
+  if (process.platform !== 'win32') return '';
   const paths = [
     'C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe',
     'C:\\Program Files\\PotPlayer\\PotPlayerMini64.exe',
@@ -183,6 +190,7 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
   let metadataSource = initialSource;
   const attempted = new Set<number>();
   const failures = new Map<string, number>();
+  const unavailable = new Set<string>();
   while (true) {
     const task = store.pendingTasks().find(item => !attempted.has(item.id));
     if (!task) break;
@@ -190,14 +198,16 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
     // Keep English metadata pending when its providers are unavailable, but
     // continue to independent Douban tasks in the same scan.
     if (task.type === 'tmdb' && !metadataSource) continue;
+    if (task.type === 'tmdb' && unavailable.has(metadataSource!)) continue;
+    if (task.type === 'imdb' && unavailable.has('omdb')) continue;
     if (task.type === 'douban' && process.env.FILM_LIBRARY_SMOKE === '1') continue;
+    if (task.type === 'douban' && (unavailable.has('douban') || douban.isBlocked())) {
+      progress({ message: douban.blockedMessage() || '豆瓣暂不可用，其他资料源继续抓取' });
+      continue;
+    }
     job.total++;
     const work = store.work(task.workId);
     if (!work) { store.taskDone(task.id); job.done++; continue; }
-    if (task.type === 'douban' && douban.isBlocked()) {
-      progress({ message: douban.blockedMessage() });
-      break;
-    }
     store.taskRunning(task.id);
     changed();
     progress({ phase: `正在获取《${work.titleZh || work.titleEn}》资料`, done: job.done });
@@ -224,7 +234,7 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
             } else note = (await metadata.hydrate(work.id, tmdbId)).join('；');
             logSource = 'tmdb';
           } catch (error) {
-            if (!store.getSecret('omdb')) throw error;
+            if (!store.getSecret('omdb') || unavailable.has('omdb')) throw error;
             if (networkFailure(error)) metadataSource = 'omdb';
             logSource = 'omdb';
             note = `TMDB 不可用，改用 OMDb；${(await metadata.hydrateOmdb(work.id)).join('；')}`;
@@ -259,14 +269,12 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
       const key = `${work.id}:${task.type}`;
       failures.set(key, (failures.get(key) ?? 0) + 1);
       if (networkFailure(error)) {
+        unavailable.add(logSource ?? (task.type === 'imdb' ? 'omdb' : task.type));
         progress({ message: String(error).replace(/^Error: /, '') });
-        job.done++;
-        changed();
-        break;
       }
       if (task.type === 'douban' && douban.isBlocked()) {
+        unavailable.add('douban');
         progress({ message: String(error).replace(/^Error: /, '') });
-        break;
       }
     }
     job.done++;
@@ -440,7 +448,7 @@ function registerIpc(): void {
       for (const root of patch.roots) {
         if (typeof root !== 'string' || !root.trim()) continue;
         const resolved = path.resolve(root.trim());
-        unique.set(resolved.toLocaleLowerCase(), resolved);
+        unique.set(process.platform === 'win32' ? resolved.toLocaleLowerCase() : resolved, resolved);
       }
       const roots: string[] = [];
       for (const candidate of [...unique.values()].sort((a, b) => a.length - b.length)) {
@@ -467,7 +475,11 @@ function registerIpc(): void {
     return result.canceled ? [] : result.filePaths;
   });
   ipcMain.handle('choosePlayer', async () => {
-    const result = await dialog.showOpenDialog(mainWindow!, { filters: [{ name: '应用程序', extensions: ['exe'] }], properties: ['openFile'] });
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      ...(process.platform === 'darwin' ? { defaultPath: '/Applications', filters: [{ name: 'Applications', extensions: ['app'] }] }
+        : process.platform === 'win32' ? { filters: [{ name: 'Applications', extensions: ['exe'] }] } : {}),
+      properties: ['openFile']
+    });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
   ipcMain.handle('updateLibrary', () => runJob('scan'));
@@ -570,9 +582,16 @@ function registerIpc(): void {
     const asset = store.asset(assetId);
     if (!asset?.active || !asset.available) throw new Error('媒体文件不存在或硬盘未连接');
     const player = settings().playerPath;
-    if (!player || !fs.existsSync(player)) throw new Error('请先在设置中选择 PotPlayer 程序');
-    const target = asset.kind === 'bdmv' ? path.join(asset.path, 'BDMV') : asset.path;
-    const child = spawn(player, [target], { detached: true, stdio: 'ignore', windowsHide: false });
+    const target = asset.kind === 'bdmv'
+      ? path.join(asset.path, fs.readdirSync(asset.path).find(name => name.toLowerCase() === 'bdmv') ?? 'BDMV') : asset.path;
+    const command = playerCommand(process.platform, player, target);
+    if (!command) {
+      const error = await shell.openPath(target);
+      if (error) throw new Error(error);
+      return;
+    }
+    if (!player || !fs.existsSync(player)) throw new Error('请先在设置中选择可用的播放器');
+    const child = spawn(command.executable, command.args, { detached: true, stdio: 'ignore', windowsHide: false });
     await new Promise<void>((resolve, reject) => {
       child.once('error', reject);
       child.once('spawn', resolve);
@@ -583,7 +602,8 @@ function registerIpc(): void {
 
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
-    width: 1380, height: 900, minWidth: 960, minHeight: 620, backgroundColor: '#080b12',
+    width: 1380, height: 900, minWidth: 720, minHeight: 540, backgroundColor: '#080b12',
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 18, y: 14 } } : {}),
     title: 'Movie Glacier', show: false, autoHideMenuBar: true,
     webPreferences: { preload: path.join(moduleDir, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: false }
   });
@@ -601,9 +621,9 @@ async function createWindow(): Promise<void> {
   else await mainWindow.loadURL('filmapp://app/index.html');
   mainWindow.on('closed', () => {
     mainWindow = null;
-    // Douban can keep an invisible BrowserWindow alive for scraping. Closing
-    // the library window must end the application, including that window.
-    app.quit();
+    // Windows exits with its library window, even if a scraper is hidden.
+    // macOS keeps its menu and Dock icon alive until the user chooses Quit.
+    if (process.platform !== 'darwin') app.quit();
   });
 }
 
@@ -611,22 +631,44 @@ if (process.env.FILM_LIBRARY_SMOKE === '1') app.disableHardwareAcceleration();
 const testing = process.env.FILM_LIBRARY_SMOKE === '1' || process.env.FILM_LIBRARY_TEST_ONBOARDING === '1';
 const dataDirectory = testing && process.env.FILM_LIBRARY_DATA_DIR && path.isAbsolute(process.env.FILM_LIBRARY_DATA_DIR)
   ? process.env.FILM_LIBRARY_DATA_DIR
-  : path.join(app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath(), 'user-data');
+  : applicationDataDirectory(process.platform, app.isPackaged, app.getAppPath(), app.getPath('exe'), app.getPath('appData'));
 try {
   prepareDataDirectory(dataDirectory, testing || !app.isPackaged ? [] : [
-    app.getPath('userData'), path.join(app.getPath('appData'), 'movie-glacier'), path.join(app.getPath('appData'), '私人影视库')
+    app.getPath('userData'), path.join(app.getPath('appData'), 'movie-glacier'), path.join(app.getPath('appData'), '私人影视库'),
+    ...(process.platform === 'darwin' ? [path.join(path.dirname(app.getPath('exe')), 'user-data')] : [])
   ]);
   app.setPath('userData', dataDirectory);
   app.setPath('sessionData', dataDirectory);
   app.setAppLogsPath(path.join(dataDirectory, 'logs'));
   app.setPath('crashDumps', path.join(dataDirectory, 'Crashpad'));
 } catch (error) {
-  dialog.showErrorBox('Movie Glacier', `无法准备或迁移用户数据，请先关闭旧版软件，并确认安装目录可写。\nClose any older Movie Glacier instance and make sure the installation folder is writable, then try again.\n\n${dataDirectory}\n${String(error)}`);
+  dialog.showErrorBox('Movie Glacier', `无法准备或迁移用户数据，请先关闭旧版软件，并确认数据目录可写。\nClose any older Movie Glacier instance and make sure the data folder is writable, then try again.\n\n${dataDirectory}\n${String(error)}`);
   app.exit(1);
 }
 
 app.whenReady().then(async () => {
-  Menu.setApplicationMenu(null);
+  const menuAction = (action: string) => async () => {
+    if (!mainWindow) await createWindow();
+    mainWindow?.show(); mainWindow?.focus(); notify('menuAction', action);
+  };
+  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([
+    { label: 'Movie Glacier', submenu: [
+      { role: 'about' }, { type: 'separator' },
+      { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: menuAction('settings') },
+      { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }
+    ] },
+    { role: 'fileMenu' }, { role: 'editMenu' },
+    { label: 'View', submenu: [
+      { label: 'Search Library', accelerator: 'CmdOrCtrl+f', click: menuAction('search') },
+      { label: 'Back to Library', accelerator: 'CmdOrCtrl+[', click: menuAction('back') },
+      { type: 'separator' },
+      { label: 'Movies', accelerator: 'CmdOrCtrl+1', click: menuAction('movie') },
+      { label: 'Series', accelerator: 'CmdOrCtrl+2', click: menuAction('tv') },
+      { label: 'Overview', accelerator: 'CmdOrCtrl+3', click: menuAction('overview') },
+      { type: 'separator' }, { role: 'togglefullscreen' }
+    ] }, { role: 'windowMenu' }
+  ]) : null);
   const userData = app.getPath('userData');
   const imageDir = cacheImageDir(userData);
   const distDir = path.resolve(moduleDir, '../../dist');
@@ -655,5 +697,6 @@ app.whenReady().then(async () => {
   await createWindow();
 }).catch(error => { console.error('影视库启动失败', error); dialog.showErrorBox('影视库启动失败', String(error)); });
 
-app.on('window-all-closed', () => app.quit());
+app.on('activate', () => { if (!mainWindow && store) void createWindow(); });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => store?.close());
