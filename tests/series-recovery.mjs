@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
 import { _electron as electron } from 'playwright-core';
 import { electronExecutable } from './electron-path.mjs';
 import { Store } from '../dist-electron/electron/store.js';
@@ -39,6 +38,8 @@ const app = await electron.launch({ executablePath: electronExecutable(), args: 
   env: { ...process.env, FILM_LIBRARY_SMOKE: '1', FILM_LIBRARY_DATA_DIR: data } });
 try {
   const page = await app.firstWindow(); await page.locator('.brand').waitFor();
+  const moduleUrl = await app.evaluate(({ app }) => process.getBuiltinModule('url').pathToFileURL(
+    process.getBuiltinModule('path').join(app.getAppPath(), 'dist-electron/electron/main.js')).href);
   await app.evaluate(async ({ session }, moduleUrl) => {
     const require = process.getBuiltinModule('module').createRequire(moduleUrl);
     const { Metadata } = require('./metadata.js'), { Douban } = require('./douban.js'), { Store } = require('./store.js');
@@ -78,7 +79,7 @@ try {
         <span property="v:genre">剧情</span><span property="v:summary">测试分季简介。</span>`, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     });
     process.env.FILM_LIBRARY_SMOKE = '0';
-  }, pathToFileURL(path.resolve('dist-electron/electron/main.js')).href);
+  }, moduleUrl);
   const job = await page.evaluate(() => window.library.retryFailed());
   assert.equal(job.failures, 0);
   const works = await page.evaluate(() => window.library.listWorks());
