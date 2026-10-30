@@ -19,6 +19,8 @@ const add = (id, name, season) => {
 };
 const robots = store.createWork('tv', 'Love, Death & Robots', 2019);
 store.setWorkFields(robots, { imdbId: 'tt1000001', matchState: 'matched' });
+store.setRating(robots, 'douban', null, 9.2, 10, '3000001');
+store.setWorkFields(robots, { doubanId: '3000001' });
 add(robots, 'Love.Death.and.Robots.S01E01.2019.mkv', 1);
 const duplicate = store.createWork('tv', 'Love Death and Robots', null);
 store.setFavorite(duplicate, true);

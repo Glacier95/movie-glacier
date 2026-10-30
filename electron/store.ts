@@ -287,6 +287,10 @@ export class Store {
       [person.id, person.name, person.originalName ?? null, JSON.stringify(person.aliases ?? [])]);
   }
   setRating(workId: number, source: string, season: number | null, score: number, votes: number | null, sourceId: string | null): void {
+    // Older versions could save a season entry as a whole-series score. Once
+    // that exact source ID is confirmed as a season, retire only its stale row.
+    if (source === 'douban' && season !== null && sourceId)
+      this.run('DELETE FROM ratings WHERE workId=? AND source=? AND season IS NULL AND sourceId=?', [workId, source, sourceId]);
     this.run('DELETE FROM ratings WHERE workId=? AND source=? AND ((season=? ) OR (season IS NULL AND ? IS NULL))', [workId, source, season, season]);
     this.run('INSERT INTO ratings(workId,source,season,score,votes,sourceId,fetchedAt) VALUES(?,?,?,?,?,?,?)',
       [workId, source, season, score, votes, sourceId, Date.now()]);
