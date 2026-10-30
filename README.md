@@ -104,9 +104,9 @@ pnpm dist
 
 ## 自动构建与发布 · GitHub Actions
 
-[Build and release](https://github.com/Glacier95/movie-glacier/actions/workflows/release.yml) 在面向 `main` 的 PR、`main` 更新及手动运行时执行构建、单元测试与打包。三个平台分别上传 Actions 构建产物，保留 7 天；这些运行不会创建 Release。
+[Build and release](https://github.com/Glacier95/movie-glacier/actions/workflows/release.yml) 在面向 `main` 的 PR、`main` 更新及手动运行时执行构建、单元测试与打包。三个平台分别上传 Actions 构建产物，保留 7 天。PR 只验证构建；合并到 `main` 后，如果应用版本尚未发布，就自动创建版本标签和 Release。
 
-The workflow builds, tests and packages pull requests targeting `main`, updates to `main`, and manual runs. Each platform uploads an Actions artifact retained for seven days. These runs do not publish a Release.
+The workflow builds, tests and packages pull requests targeting `main`, updates to `main`, and manual runs. Each platform uploads an Actions artifact retained for seven days. Pull requests only validate builds. After merging to `main`, an unpublished application version automatically receives a version tag and a GitHub Release.
 
 | 平台 / Platform | 发布文件 / Release files |
 | --- | --- |
@@ -115,16 +115,13 @@ The workflow builds, tests and packages pull requests targeting `main`, updates 
 | Mac Intel | `Movie.Glacier-<version>-mac-x64.dmg`, `.zip` |
 | 校验 / Verification | Available blockmaps and one combined `SHA256SUMS.txt` |
 
-发布时，先更新 `package.json` 的版本和中英文更新历史并合并到 `main`，再给该提交打 `v<version>` 标签并推送。标签必须与应用版本完全一致；三个平台都成功后，工作流检查安装包完整性、生成统一校验文件并发布 GitHub Release。首次上传完成前保持草稿，失败后可重新运行。无需添加个人访问令牌，发布任务使用仓库自带的 `GITHUB_TOKEN`。
+发布时，只需更新 `package.json` 的版本和中英文更新历史，然后合并到 `main`。例如版本 `0.7.0` 会自动生成标签 `v0.7.0`，无需手动打标签。三个平台都成功后，工作流检查安装包完整性、生成统一校验文件并发布 GitHub Release。同版本的后续提交只构建，不覆盖已发布安装包；下次发布应先升级版本号，例如 `0.7.1`。首次上传完成前保持草稿，失败后可重新运行原工作流。无需添加个人访问令牌，发布任务使用仓库自带的 `GITHUB_TOKEN`。
 
-To release, update the version in `package.json` and the bilingual changelog, merge to `main`, then push a matching `v<version>` tag. All three builds must pass before publication. The workflow validates the complete installer set, generates combined checksums, uploads the files and publishes the Release. A new Release remains a draft until its uploads finish; failed runs can be retried. The publish job uses the built-in `GITHUB_TOKEN`; no personal access token is required. Prerelease version tags are marked as prereleases.
+To release, update the version in `package.json` and the bilingual changelog, then merge to `main`. Version `0.7.0`, for example, automatically creates tag `v0.7.0` at the exact built commit. All three builds must pass before publication. The workflow validates the complete installer set, generates combined checksums and publishes the Release after its uploads finish. Later commits with the same version never replace published assets; increment the version for the next release. Failed runs can be retried to complete their draft. For an unpublished version, an existing tag pointing to a different commit is rejected. The publish job uses the built-in `GITHUB_TOKEN`; no personal access token is required. Prerelease versions are marked as prereleases.
 
-```sh
-# Run from the merged release commit; the tag must not already exist.
-release_tag="v$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
-git tag "$release_tag"
-git push origin "$release_tag"
-```
+手动运行时，选择 `main` 也会检查并发布尚未发布的版本；选择其他分支只生成构建产物。主分支正在执行的发布不会因新提交而中途取消。
+
+A manual run on `main` also publishes an unpublished version; manual runs on other branches only produce build artifacts. A new push does not cancel a main-branch upload in progress.
 
 CI checks do not replace native UI acceptance or live metadata-provider checks. macOS packages remain ad-hoc signed without Apple notarization.
 
