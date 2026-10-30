@@ -63,6 +63,24 @@ test('Chinese seasons, episode-only filenames and known numbered series share a 
   assert.equal(parse('Kill.Bill.Vol.1.2003.mkv').mediaType, 'movie');
 });
 
+test('repeated release years and SP specials share the Reply 1988 series identity', () => {
+  const folder = '请回答1988.导演剪辑版.Reply.1988.E01-E20.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS';
+  for (let episode = 1; episode <= 20; episode++) {
+    const name = `Reply.1988.2015.E${String(episode).padStart(2, '0')}.2015.1080p.DC.Blu-ray.x265.AC3￡cXcY@FRDS.mkv`;
+    for (const relative of [name, path.join(folder, name)]) {
+      const parsed = parse(relative);
+      assert.deepEqual([parsed.mediaType, parsed.normalizedTitle, parsed.year, parsed.season, parsed.episode], ['tv', 'reply 1988', 2015, 1, episode], relative);
+    }
+  }
+  for (const marker of ['SP', 'SP02', 'Special.2']) {
+    const parsed = parse(path.join(folder, `Reply.1988.${marker}.2015.720p.HDTV.x265.AC3￡cXcY@FRDS.mkv`));
+    assert.deepEqual([parsed.mediaType, parsed.normalizedTitle, parsed.year, parsed.season, parsed.episode], ['tv', 'reply 1988', 2015, 0, marker === 'SP' ? 1 : 2]);
+  }
+  assert.equal(parse('A.Movie.SP.2015.mkv').mediaType, 'movie');
+  assert.equal(parse('Reply.1988.The.Movie.SP.2020.mkv').mediaType, 'movie');
+  assert.equal(parse('Another.Show.2015.E01.2015.mkv').normalizedTitle, 'another show');
+});
+
 test('TMDB never accepts a shorter title just because its year matches', () => {
   assert.equal(chooseTmdbCandidate('爱死亡和机器人3', 2022, [candidate(1, '爱死亡', 2022)]), null);
   assert.equal(chooseTmdbCandidate('Reply 1988', 2015, [candidate(1, 'Reply', 2015)]), null);

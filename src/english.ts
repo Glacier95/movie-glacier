@@ -3,6 +3,7 @@ export const english: Record<string, string> = {
   "各季评分": "Season ratings",
   "整剧": "Overall series",
   "第 {0} 季": "Season {0}",
+  "特别篇": "Specials",
   "OMDb 请求额度已用尽；已暂停本轮 OMDb 抓取，请在额度恢复后重试": "OMDb request quota reached. OMDb fetching is paused for this update; retry when quota is available.",
   "第 {0} 季暂未匹配": "Season {0} is not matched yet",
   "全屏（⌃⌘F）": "Full screen (⌃⌘F)",

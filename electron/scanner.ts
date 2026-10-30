@@ -42,13 +42,18 @@ function parsePart(raw: string): ParsedName {
   const seasonMatch = /第\s*([零一二三四五六七八九十\d]+)\s*季|(?:^|[. _-])(?:S|Season[. _-]*)(\d{1,2})(?=$|[^\d])/i.exec(raw)
     ?? (volumeMatch && knownSeries(raw.slice(0, volumeMatch.index)) ? volumeMatch : null);
   const episodeMatch = /第\s*([零一二三四五六七八九十\d]+)\s*集|(?:^|[. _-])(?:EP?|Episode[. _-]*)(\d{1,3})(?=$|[^\d])/i.exec(raw);
+  // Use the first release year, even when it is repeated after the episode token.
   // A release year needs a delimiter and a title before it. Numeric titles stay intact.
   const yearMatch = [...raw.matchAll(/(?:^|[. _\-([【])((?:19|20)\d{2})(?=$|[. _\-)\]】])/g)]
     .filter(match => Number(match[1]) <= new Date().getFullYear() + 2 && raw.slice(0, match.index).replace(/[. _\-([【]/g, '').length > 0 &&
-      !knownSeries(raw.slice(0, match.index + match[0].length))).at(-1);
+      !knownSeries(raw.slice(0, match.index + match[0].length))).at(0);
   const year = yearMatch ? Number(yearMatch[1]) : null;
-  const cutoff = Math.min(...[pair?.index, seasonMatch?.index, episodeMatch?.index, yearMatch?.index]
+  let cutoff = Math.min(...[pair?.index, seasonMatch?.index, episodeMatch?.index, yearMatch?.index]
     .filter((value): value is number => value !== undefined), raw.length);
+  // A special belongs to a recognized series, never an arbitrary film containing "SP".
+  const specialMatch = /(?:^|[. _-])(?:SP|Specials?)(?:[. _-]*(\d{1,3}))?(?=$|[. _-])/i.exec(raw);
+  const special = specialMatch && knownSeries(raw.slice(0, Math.min(cutoff, specialMatch.index))) ? specialMatch : null;
+  if (special) cutoff = Math.min(cutoff, special.index);
   let prefix = raw.slice(0, cutoff);
   const token = releaseToken.exec(prefix);
   if (token) prefix = prefix.slice(0, token.index);
@@ -57,8 +62,8 @@ function parsePart(raw: string): ParsedName {
   let title = prefix || raw.replace(/[._]+/g, ' ').trim();
   const series = knownSeries(title);
   if (series) title = /[\p{Script=Han}]/u.test(title) ? series.titleZh : series.titleEn;
-  const season = pair ? Number(pair[1]) : seasonMatch ? numeral(seasonMatch[1] ?? seasonMatch[2] ?? '') : series?.season ?? null;
-  const episode = pair ? Number(pair[2]) : episodeMatch ? numeral(episodeMatch[1] ?? episodeMatch[2] ?? '') : null;
+  const season = special ? 0 : pair ? Number(pair[1]) : seasonMatch ? numeral(seasonMatch[1] ?? seasonMatch[2] ?? '') : series?.season ?? null;
+  const episode = special ? Number(special[1] ?? 1) : pair ? Number(pair[2]) : episodeMatch ? numeral(episodeMatch[1] ?? episodeMatch[2] ?? '') : null;
   return { mediaType: pair || season !== null || episode !== null || series ? 'tv' : 'movie',
     title, normalizedTitle: mediaTitleKey(title), year, season: season ?? (episode !== null ? 1 : null), episode };
 }
@@ -87,7 +92,7 @@ export function parseName(sourcePath: string, kind: 'file' | 'bdmv'): ParsedName
       const number = /^(\d{1,3})(?=$|[. _-])/.exec(raw);
       const title = generic ? parent.title : parsed.title;
       return { ...parsed, mediaType: 'tv', title, normalizedTitle: mediaTitleKey(title),
-        year: parsed.year ?? parent.year, season: explicitSeason || (parsed.season !== null && parsed.season > 1) ? parsed.season : folderSeason ?? parsed.season ?? 1,
+        year: parsed.year ?? parent.year, season: explicitSeason || parsed.season === 0 || (parsed.season !== null && parsed.season > 1) ? parsed.season : folderSeason ?? parsed.season ?? 1,
         episode: parsed.episode ?? (number ? Number(number[1]) : null) };
     }
   }
