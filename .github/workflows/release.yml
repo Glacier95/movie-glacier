@@ -72,6 +72,8 @@ jobs:
         if: runner.os == 'macOS'
         env:
           TARGET_ARCH: ${{ matrix.arch }}
+          # Use the configured ad-hoc identity; no signing credentials are supplied.
+          CSC_FOR_PULL_REQUEST: 'true'
         run: node scripts/dist-mac.cjs "--$TARGET_ARCH"
       - name: Verify macOS package
         if: runner.os == 'macOS'
