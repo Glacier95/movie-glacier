@@ -1,6 +1,6 @@
 import { BrowserWindow, session } from 'electron';
 import type { Work } from '../src/shared.js';
-import { chooseDoubanSuggestion, doubanChineseTitle, doubanTitleQueries, ratingFromSearchLinks, type DoubanSearchLink, type DoubanSuggestion, type DoubanSubject } from './douban-match.js';
+import { chooseDoubanSuggestion, doubanChineseTitle, doubanSearchQueries, doubanLocalizedSeriesAliases, doubanSeasonSubjectMatches, ratingFromSearchLinks, type DoubanSearchLink, type DoubanSuggestion, type DoubanSubject } from './douban-match.js';
 import { lookupDoubanIdByImdb } from './douban-crosswalk.js';
 import { titleQueries } from './media-titles.js';
 
@@ -118,17 +118,10 @@ export class Douban {
   }
 
   async findSubject(work: Work, season: number | null = null, preferredId: string | null = null): Promise<DoubanSubject | null> {
-    const numerals = ['零','一','二','三','四','五','六','七','八','九','十'];
-    const base = work.titleZh || work.titleEn || work.originalTitle;
-    // Douban's suggestion endpoint can distinguish the capitalization of an
-    // English query ("For a Few Dollars More" may be empty while "For A Few
-    // Dollars More" finds the film). Include original titles as well.
-    const titleCase = (value: string) => value.replace(/\b[a-z]/g, letter => letter.toUpperCase());
-    const aliases = doubanTitleQueries(work);
-    const queries = season === null ? [...aliases, ...aliases.map(titleCase)] :
-      [...aliases.map(title => /\p{Script=Han}/u.test(title) ? `${title} 第${numerals[season] ?? season}季` : `${title} Season ${season}`), base];
+    const queries = doubanSearchQueries(work, season);
+    const queued = new Set(queries);
     let sawSuggestions = false;
-    for (const query of [...new Set(queries.map(value => value?.trim()).filter(Boolean))]) {
+    for (const query of queries) {
       let results = this.suggestions.get(query);
       if (!results) {
         const url = new URL('https://movie.douban.com/j/subject_suggest');
@@ -145,11 +138,19 @@ export class Douban {
         if (results.length) this.suggestions.set(query, results);
       }
       if (results.length) sawSuggestions = true;
+      if (season !== null) for (const titleZh of doubanLocalizedSeriesAliases(work, results)) {
+        for (const localizedQuery of doubanSearchQueries({ ...work, titleZh }, season)) {
+          if (!queued.has(localizedQuery)) { queued.add(localizedQuery); queries.push(localizedQuery); }
+        }
+      }
       const match = preferredId ? results.find(item => item.id === preferredId) ?? null : chooseDoubanSuggestion(work, season, results);
       if (!match) continue;
       const subject = await this.readWithFallback(match.id, [query]);
       if (!subject) continue;
-      if (work.imdbId && subject.imdbId && work.imdbId !== subject.imdbId) continue;
+      // A season's Douban page may link an IMDb episode, while the library stores the series ID.
+      // Verify the selected page's complete title and season instead of requiring those IDs to agree.
+      if (season !== null && !doubanSeasonSubjectMatches(match, subject, season)) continue;
+      if (season === null && work.imdbId && subject.imdbId && work.imdbId !== subject.imdbId) continue;
       if (work.year && subject.year && season === null && Math.abs(work.year - subject.year) > 1) continue;
       return { ...subject, titleZh: match.title.trim() || subject.titleZh };
     }

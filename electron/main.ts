@@ -9,6 +9,7 @@ import { discover, findNfoId, localPoster, parseName, type DiscoveredMedia } fro
 import { localWorkMatches, repairParsedWork, reconcileSeries } from './local-match.js';
 import { lookupYear } from './omdb.js';
 import { knownSeries } from './media-titles.js';
+import { doubanSeriesTitle } from './douban-match.js';
 import { cacheImageDir, cacheLocalImage, Metadata } from './metadata.js';
 import { Store } from './store.js';
 import { Douban } from './douban.js';
@@ -181,7 +182,7 @@ async function refreshDoubanSeasons(work: Work, seasons: number[]): Promise<stri
   const notes: string[] = [];
   const canonical = [work.titleZh, work.titleEn, work.originalTitle].map(knownSeries).find(Boolean);
   for (const season of seasons) {
-    let seasonSubject = await douban.findSubject(work, season);
+    let seasonSubject = await douban.findSubject(store.work(work.id)!, season);
     let wholeSeries = false;
     if (!seasonSubject && season === 1) {
       seasonSubject = await douban.findSubject(work);
@@ -189,9 +190,10 @@ async function refreshDoubanSeasons(work: Work, seasons: number[]): Promise<stri
     }
     if (!seasonSubject) { notes.push(`第 ${season} 季暂未匹配`); continue; }
     const current = store.work(work.id)!;
+    const titleZh = canonical?.titleZh || doubanSeriesTitle(seasonSubject.titleZh ?? '');
     const imdbId = !current.imdbId && season === 1 && /^tt\d{7,10}$/.test(seasonSubject.imdbId ?? '') ? seasonSubject.imdbId : null;
     store.setWorkFields(work.id, {
-      ...(canonical ? { doubanTitleZh: canonical.titleZh, titleZh: canonical.titleZh } : {}),
+      ...(titleZh && /\p{Script=Han}/u.test(titleZh) ? { doubanTitleZh: titleZh, titleZh } : {}),
       ...(wholeSeries && !current.doubanId ? { doubanId: seasonSubject.id } : {}),
       ...((!current.doubanOverviewZh || season === 1) && seasonSubject.overviewZh ? { doubanOverviewZh: seasonSubject.overviewZh } : {}),
       ...(!current.doubanTags.length && seasonSubject.tagsZh?.length ? { doubanTags: seasonSubject.tagsZh } : {}),
@@ -337,6 +339,14 @@ async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobS
   progress({ phase: kind === 'scan' ? '正在检查影视目录' : '正在刷新影片资料' });
   try {
     reconcileSeries(store);
+    // Earlier partial successes were marked done. Retry only genuinely missing regular seasons.
+    for (const work of store.listWorks()) {
+      if (work.mediaType !== 'tv') continue;
+      const seasons = [...new Set(work.assets.map(asset => asset.season).filter((value): value is number => value !== null && value > 0))];
+      const wholeSeries = seasons.length === 1 && work.ratingSeason === null && work.ratingDouban !== null;
+      if (!wholeSeries && seasons.some(season => !work.seasonRatings.some(rating => rating.source === 'douban' && rating.season === season)))
+        store.queueTask('douban', work.id);
+    }
     if (kind === 'scan') {
       for (const root of store.roots()) {
         const seen = Date.now();

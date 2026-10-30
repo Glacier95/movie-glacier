@@ -27,8 +27,9 @@ const emptySettings: PublicSettings = { ...posterWallDefaults, ...appearanceDefa
 function poster(work: Work): string | undefined { return work.poster ? `library://image/${work.poster}` : undefined; }
 function displayTitle(work: Work): string { return isEnglish() ? englishTitle(work) : work.titleZh || work.titleEn || work.originalTitle || t("未命名影片"); }
 function englishTitle(work: Work): string {
-  if (isEnglish()) return [work.titleEn, work.originalTitle].find(value => value && !/[\u3400-\u9fff]/.test(value)) || 'Title unavailable';
-  return work.titleEn || work.originalTitle || displayTitle(work);
+  const english = [work.titleEn, work.originalTitle].find(value => value && !/\p{Script=Han}/u.test(value));
+  if (isEnglish()) return english || 'Title unavailable';
+  return english || work.titleZh || work.doubanTitleZh || work.titleEn || work.originalTitle || t("未命名影片");
 }
 function chineseTitle(work: Work): string { return isEnglish() ? '' : work.titleZh || work.doubanTitleZh; }
 function posterTitle(work: Work): string { return englishTitle(work); }

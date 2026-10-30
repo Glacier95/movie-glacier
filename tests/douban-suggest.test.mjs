@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chooseDoubanSuggestion, doubanChineseTitle, doubanGenresFromMeta, doubanTitleQueries, ratingFromSearchLinks } from '../dist-electron/electron/douban-match.js';
+import { chooseDoubanSuggestion, doubanChineseTitle, doubanGenresFromMeta, doubanTitleQueries, doubanSearchQueries, doubanLocalizedSeriesAliases, doubanSeasonSubjectMatches, ratingFromSearchLinks } from '../dist-electron/electron/douban-match.js';
 
 test('suggestions identify films by title and year without confusing a series', () => {
   const work = { mediaType: 'movie', titleZh: '双峰：与火同行', titleEn: 'Twin Peaks: Fire Walk with Me', originalTitle: 'Twin Peaks: Fire Walk with Me', year: 1992 };
@@ -77,4 +77,30 @@ test('search page fallback reads Chinese title, genres and rating only from the 
   assert.equal(doubanChineseTitle('冰血暴 Fargo (1996)'), '冰血暴');
   assert.deepEqual(doubanGenresFromMeta('美国 / 惊悚 / 犯罪 / 98分钟'), ['惊悚', '犯罪']);
   assert.equal(ratingFromSearchLinks('9999999', links), null);
+});
+
+test('localized season queries omit the separator and learn aliases only from a full title match', () => {
+  const work = { mediaType: 'tv', titleZh: 'Stranger Things', titleEn: 'Stranger Things', originalTitle: 'Stranger Things', year: 2016 };
+  const first = { id: '26359270', title: '怪奇物语 第一季', sub_title: 'Stranger Things', year: '2016' };
+  assert.deepEqual(doubanLocalizedSeriesAliases(work, [first]), ['怪奇物语']);
+  assert.deepEqual(doubanLocalizedSeriesAliases(work, [{ ...first, sub_title: 'Stranger Things: Behind the Scenes' }]), []);
+  const localized = { ...work, titleZh: '怪奇物语 第一季' };
+  const queries = doubanSearchQueries(localized, 2);
+  assert.ok(queries.includes('怪奇物语第二季'));
+  assert.ok(queries.includes('怪奇物语'));
+  assert.ok(queries.includes('Stranger Things'));
+  assert.ok(!queries.some(query => query.includes('第一季') || query.includes('First Season')));
+  const later = { id: '26844438', title: '怪奇物语 第二季', sub_title: 'Stranger Things', year: '2017' };
+  assert.equal(chooseDoubanSuggestion(localized, 2, [first, later])?.id, later.id);
+  assert.equal(doubanChineseTitle('怪奇物语 第2季 Stranger Things Season 2 (2017)'), '怪奇物语 第2季');
+});
+
+test('season pages require their own exact title and season even when IMDb refers to an episode', () => {
+  const match = { id: '26844438', title: '怪奇物语 第二季', sub_title: 'Stranger Things', year: '2017' };
+  const subject = { id: match.id, title: '怪奇物语 第二季', titleZh: '怪奇物语 第二季', year: 2017, rating: 8.9, votes: 100, imdbId: 'tt6020684' };
+  assert.equal(doubanSeasonSubjectMatches(match, subject, 2), true);
+  assert.equal(doubanSeasonSubjectMatches(match, { ...subject, title: '怪奇物语 第一季', titleZh: '怪奇物语 第一季' }, 2), false);
+  assert.equal(doubanSeasonSubjectMatches(match, { ...subject, title: 'Other Show Season 2', titleZh: '其他剧 第二季' }, 2), false);
+  assert.equal(doubanSeasonSubjectMatches(match, { ...subject, id: '1234567' }, 2), false);
+  assert.equal(doubanSeasonSubjectMatches(match, subject, 3), false);
 });
