@@ -1,6 +1,6 @@
 {
   "name": "movie-glacier",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Personal movie and series library for macOS and Windows",
   "author": "Movie Glacier",
   "license": "MIT",
@@ -29,6 +29,7 @@
     "test:metadata": "node tests/metadata-pipeline.mjs"
   },
   "dependencies": {
+    "opencc-js": "1.4.2",
     "sql.js": "^1.13.0"
   },
   "devDependencies": {

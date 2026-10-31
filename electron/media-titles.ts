@@ -1,3 +1,5 @@
+import { cleanTitle } from './title-cleanup.js';
+
 // Small, explicit aliases for numeric series titles; never strip arbitrary movie sequels.
 export function knownSeries(title: string): { titleZh: string; titleEn: string; season: number | null } | null {
   const compact = title.normalize('NFKC').replace(/(?:导演剪辑|導演剪輯)版?|\bdirector(?:['’]?s)?[\s._-]+cut\b/gi, '')
@@ -9,6 +11,7 @@ export function knownSeries(title: string): { titleZh: string; titleEn: string; 
 }
 
 export function titleQueries(title: string): string[] {
+  title = cleanTitle(title);
   // Keep &, punctuation and numbers in English titles (Love, Death & Robots / Reply 1988).
   // Release names may explicitly join alternative titles with AKA. Search each
   // complete alias instead of treating the entire release name as one title.

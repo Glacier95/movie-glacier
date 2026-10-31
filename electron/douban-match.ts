@@ -1,6 +1,7 @@
 import type { Work } from '../src/shared.js';
 import { normalizeTitle, mediaTitleKey } from './scanner.js';
 import { knownSeries, titleQueries } from './media-titles.js';
+import { cleanTitle } from './title-cleanup.js';
 
 export interface DoubanSubject { id: string; title: string; year: number | null; rating: number | null; votes: number | null;
   imdbId?: string | null; titleZh?: string; overviewZh?: string; tagsZh?: string[]; }
@@ -11,7 +12,7 @@ const chineseGenres = new Set(['剧情','喜剧','动作','爱情','科幻','动
   '家庭','历史','战争','传记','音乐','歌舞','运动','西部','武侠','古装','情色','灾难','纪录片','短片','同性','儿童','黑色电影','真人秀']);
 
 export function doubanChineseTitle(value: string): string {
-  const title = value.replace(/[\u200e\u200f]/g, '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim();
+  const title = cleanTitle(value.replace(/[\u200e\u200f]/g, '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim());
   return title.match(/^[\p{Script=Han}\d·：:！？!？、，,。\s]+/u)?.[0]?.trim() || title;
 }
 

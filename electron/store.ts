@@ -4,6 +4,7 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import type { ParsedName } from './scanner.js';
 import type { MediaAsset, MediaType, Person, ScrapeLog, SeasonRating, Work } from '../src/shared.js';
 import { validateImdbTop250, type ImdbChartEntry } from './imdb-chart.js';
+import { cleanTitle, titleFields } from './title-cleanup.js';
 
 type SqlValue = string | number | null;
 type Row = Record<string, unknown>;
@@ -71,6 +72,18 @@ export class Store {
     if (!personColumns.includes('aliases')) db.run("ALTER TABLE person_aliases ADD COLUMN aliases TEXT NOT NULL DEFAULT '[]'");
     const store = new Store(db, file, secrets);
     store.save();
+    if (!store.getSetting('concatenatedTitlesV1')) {
+      for (const row of store.all<Row>('SELECT id,titleZh,titleEn,originalTitle,doubanTitleZh FROM works')) {
+        const fields: Partial<Work> = {};
+        for (const field of titleFields) {
+          const value = String(row[field]);
+          const cleaned = cleanTitle(value);
+          if (cleaned !== value) fields[field] = cleaned;
+        }
+        if (Object.keys(fields).length) store.setWorkFields(Number(row.id), fields);
+      }
+      store.setSetting('concatenatedTitlesV1', '1');
+    }
     if (!store.getSetting('doubanDetailsV1')) {
       store.retryFailed();
       for (const work of store.listWorks()) {
@@ -168,6 +181,7 @@ export class Store {
       [type, normalizedTitle.toLowerCase(), year, year, 'pending', 'manual'])?.id) || null;
   }
   createWork(type: MediaType, title: string, year: number | null): number {
+    title = cleanTitle(title);
     this.db.run('INSERT INTO works(mediaType,titleZh,titleEn,originalTitle,year,addedAt) VALUES(?,?,?,?,?,?)',
       [type, title, title, title, year, Date.now()]);
     const id = this.lastId();
@@ -255,7 +269,8 @@ export class Store {
     const allowed = new Set(['tmdbId','imdbId','doubanId','doubanTitleZh','doubanOverviewZh','doubanTags','titleZh','titleEn','originalTitle','year','overview','runtime','poster','backdrop','genres','countries','directors','creators','writers','actors','ratingDouban','ratingSeason','ratingImdb','doubanVotes','topRank','updatedAt','matchState']);
     const entries = Object.entries(fields).filter(([key]) => allowed.has(key));
     if (!entries.length) return;
-    const values = entries.map(([, value]) => typeof value === 'object' && value !== null ? JSON.stringify(value) : value as SqlValue);
+    const values = entries.map(([key, value]) => titleFields.some(field => field === key) && typeof value === 'string' ? cleanTitle(value)
+      : typeof value === 'object' && value !== null ? JSON.stringify(value) : value as SqlValue);
     this.run(`UPDATE works SET ${entries.map(([key]) => `${key}=?`).join(',')} WHERE id=?`, [...values, id]);
     if (entries.some(([key]) => key === 'imdbId')) this.syncImdbTopRank(id);
   }

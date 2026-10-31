@@ -35,7 +35,12 @@ for (const film of films) {
   store.setWorkFields(movie, { titleEn: film.traditional, originalTitle: film.original, doubanTitleZh: film.zh, matchState: 'matched' });
   const file = path.join(media, `${film.primary}.mkv`); fs.writeFileSync(file, 'fixture');
   store.putAsset({ workId: movie, root: media, path: file, kind: 'file', season: null, episode: null, size: 7, mtimeMs: 1 }, 1);
+  if (film.original === film.traditional) {
+    const legacy = `${film.zh} ${film.traditional}`;
+    store.run('UPDATE works SET titleZh=?,titleEn=?,originalTitle=?,doubanTitleZh=? WHERE id=?', [legacy, legacy, legacy, legacy, movie]);
+  }
 }
+store.run("DELETE FROM settings WHERE key='concatenatedTitlesV1'");
 store.setRoots([media]); store.close();
 const packaged = process.env.FILM_LIBRARY_PACKAGED === '1';
 const launch = () => electron.launch({ executablePath: electronExecutable(), args: ['--no-sandbox', '--disable-gpu', ...(packaged ? [] : ['.'])],
@@ -46,6 +51,11 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const errors = []; page.on('pageerror', error => errors.push(String(error)));
   await page.locator('.brand').waitFor();
+  const repairedTitles = await page.evaluate(() => window.library.listWorks());
+  for (const film of films.filter(film => film.original === film.traditional)) {
+    const work = repairedTitles.find(work => work.titleZh === film.zh);
+    for (const field of ['titleZh', 'titleEn', 'originalTitle', 'doubanTitleZh']) assert.equal(work[field], film.zh);
+  }
   const expectedVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
   assert.equal(await page.locator('.app-version').innerText(), `v${expectedVersion}`);
   assert.equal(await app.evaluate(({ app }) => app.getVersion()), expectedVersion);
