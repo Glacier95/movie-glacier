@@ -60,7 +60,9 @@ jobs:
         if: runner.os == 'Windows'
         env:
           FILM_LIBRARY_PACKAGED: '1'
-        run: node tests/franchise-posters.mjs
+        run: |
+          node tests/franchise-posters.mjs
+          node tests/general-movie-titles.mjs
       - name: Package macOS installers
         if: runner.os == 'macOS'
         env:

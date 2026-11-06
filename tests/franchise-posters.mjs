@@ -43,6 +43,7 @@ try {
     const json = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
     await session.fromPartition('persist:metadata').protocol.handle('https', request => {
       const url = new URL(request.url); globalThis.posterRequests.push(request.url);
+      if (url.hostname === 'query.wikidata.org') return json({ results: { bindings: [] } });
       if (url.hostname === 'www.omdbapi.com') {
         const film = films.find(film => film.imdbId === url.searchParams.get('i'));
         if (!film) return json({ Response: 'True' });

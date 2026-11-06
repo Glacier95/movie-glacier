@@ -226,6 +226,7 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
     if (task.type === 'tmdb' && !metadataSource) continue;
     if (task.type === 'tmdb' && unavailable.has(metadataSource!)) continue;
     if (task.type === 'imdb' && unavailable.has('omdb')) continue;
+    if (task.type === 'wikidata' && unavailable.has('wikidata')) continue;
     if (task.type === 'douban' && process.env.FILM_LIBRARY_SMOKE === '1') continue;
     if (task.type === 'douban' && (unavailable.has('douban') || douban.isBlocked())) {
       progress({ message: douban.blockedMessage() || '豆瓣暂不可用，其他资料源继续抓取' });
@@ -275,6 +276,7 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
           if (existing && existing !== work.id) { store.moveAssets(work.id, existing); targetId = existing; }
         }
         store.queueTask('douban', targetId);
+        if (store.work(targetId)?.mediaType === 'movie') store.queueTask('wikidata', targetId);
         if (logSource === 'tmdb') store.queueTask('imdb', targetId);
       } else if (task.type === 'imdb') {
         if (!work.imdbId) { store.taskSkipped(task.id, '未找到 IMDb 条目 ID，等待 TMDB 提供'); skipped = true; }
@@ -282,6 +284,10 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
         else if (!(await metadata.refreshImdb(work.id))) { store.taskSkipped(task.id, 'OMDb 暂无 IMDb 评分'); skipped = true; }
       } else if (task.type === 'douban') {
         note = await refreshDoubanWork(work);
+      } else if (task.type === 'wikidata') {
+        if (!(await metadata.refreshChineseTitle(work.id))) {
+          store.taskSkipped(task.id, '暂无可靠中文片名或已保留手动片名'); skipped = true;
+        } else note = '已按 IMDb 编号更新中文片名';
       }
       if (!skipped) {
         store.taskDone(task.id, undefined, note, logSource);
@@ -291,6 +297,7 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
       }
     } catch (error) {
       store.taskDone(task.id, String(error), '', logSource ?? (task.type === 'tmdb' ? metadataSource ?? 'tmdb' : undefined));
+      if (task.type === 'wikidata') unavailable.add('wikidata');
       job.failures++;
       const key = `${work.id}:${task.type}`;
       failures.set(key, (failures.get(key) ?? 0) + 1);
@@ -442,6 +449,13 @@ async function refreshWorkMetadata(workId: number, source: MetadataSource): Prom
     } else {
       if (douban.isBlocked()) throw new Error(douban.blockedMessage());
       note = await refreshDoubanWork(work);
+    }
+    if (source !== 'douban' && work.mediaType === 'movie') {
+      try { await metadata.refreshChineseTitle(workId); }
+      catch (error) {
+        store.queueTask('wikidata', workId);
+        note += `；中文片名待补全：${String(error).replace(/^Error: /, '')}`;
+      }
     }
     store.recordSourceRefresh(workId, source, undefined, note);
     progress({ done: 1, message: `${label} 已更新《${store.work(workId)?.titleEn || work.titleZh}》` });

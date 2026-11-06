@@ -8,6 +8,7 @@ import { tmdbScore, chooseTmdbCandidate } from './tmdb-match.js';
 import { searchOmdbCandidate, lookupYear, omdbChineseTitle, omdbPeople, omdbYear, omdbQuotaMessage, omdbQuotaReached,
   safeOmdbPoster, checkOmdbYear, type OmdbCandidate } from './omdb.js';
 import { Store } from './store.js';
+import { lookupChineseMovieTitle } from './localized-movies.js';
 
 interface TmdbResult {
   id: number; title?: string; name?: string; original_title?: string; original_name?: string;
@@ -115,6 +116,20 @@ export class Metadata {
   constructor(private store: Store, private userData: string) {}
 
   async setProxy(value: string): Promise<void> { this.tmdbFailure = null; await configureProxy(this.network, value); }
+
+  async refreshChineseTitle(workId: number): Promise<boolean> {
+    const work = this.store.work(workId);
+    if (!work || work.mediaType !== 'movie' || !work.imdbId || this.store.hasManualTitle(workId)) return false;
+    const cached = this.store.localizedMovieTitle(work.imdbId);
+    const fresh = cached && Date.now() - cached.fetchedAt < 30 * 24 * 3600_000;
+    const title = fresh ? cached.titleZh
+      : await lookupChineseMovieTitle(work.imdbId, (url, options) => this.network.fetch(url, options), work.titleZh);
+    if (!title) return false;
+    if (!fresh) this.store.setLocalizedMovieTitle(work.imdbId, title);
+    this.store.applyDoubanTitle(workId);
+    this.store.applyManualFields(workId);
+    return true;
+  }
 
   async testSources(patch: { proxyUrl?: string; tmdbKey?: string; omdbKey?: string } = {}): Promise<ConnectionChecks> {
     const network = session.fromPartition('metadata-connection-check');
