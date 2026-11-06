@@ -127,7 +127,7 @@ export interface ScrapeLog {
   id: number;
   workId: number;
   title: string;
-  source: 'tmdb' | 'omdb' | 'douban';
+  source: 'tmdb' | 'omdb' | 'douban' | 'wikidata';
   status: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
   message: string;
   updatedAt: number;

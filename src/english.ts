@@ -1,5 +1,7 @@
 // English UI copy; Chinese source text remains the default.
 export const english: Record<string, string> = {
+  "暂无可靠中文片名或已保留手动片名": "No verified Chinese title is available, or the manual title was preserved",
+  "已按 IMDb 编号更新中文片名": "Updated the Chinese title by IMDb ID",
   "各季评分": "Season ratings",
   "整剧": "Overall series",
   "第 {0} 季": "Season {0}",

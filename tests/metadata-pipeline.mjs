@@ -63,6 +63,7 @@ try {
       return [];
     };
     Metadata.prototype.refreshImdb = async () => true;
+    Metadata.prototype.refreshChineseTitle = async () => true;
     Douban.prototype.isBlocked = () => true;
     Douban.prototype.blockedMessage = () => 'Fixture verification required';
     process.env.FILM_LIBRARY_SMOKE = '0';

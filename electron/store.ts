@@ -6,6 +6,7 @@ import type { MediaAsset, MediaType, Person, ScrapeLog, SeasonRating, Work } fro
 import { validateImdbTop250, type ImdbChartEntry } from './imdb-chart.js';
 import { cleanTitle, titleFields } from './title-cleanup.js';
 import { movieChineseTitle } from './movie-titles.js';
+import { preferredMovieTitle } from './localized-movies.js';
 
 type SqlValue = string | number | null;
 type Row = Record<string, unknown>;
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, type TEXT NOT NULL, wo
 CREATE TABLE IF NOT EXISTS task_history (id INTEGER PRIMARY KEY, taskId INTEGER NOT NULL, workId INTEGER,
   source TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL, message TEXT NOT NULL DEFAULT '', updatedAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS work_edits (workId INTEGER PRIMARY KEY REFERENCES works(id), fields TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS localized_movie_titles (imdbId TEXT PRIMARY KEY, titleZh TEXT NOT NULL, fetchedAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS person_aliases (id TEXT PRIMARY KEY, name TEXT NOT NULL, originalName TEXT, aliases TEXT NOT NULL DEFAULT '[]');
 `;
 
@@ -114,6 +116,11 @@ export class Store {
         if (work.imdbId) store.queueTask('imdb', work.id);
       }
       store.setSetting('movieTitlesAndPostersV1', '1');
+    }
+    if (!store.getSetting('localizedMovieTitlesV2')) {
+      for (const work of store.all<{ id: number }>("SELECT id FROM works WHERE mediaType='movie' AND imdbId IS NOT NULL AND matchState!='ignored'"))
+        if (!store.hasManualTitle(work.id)) store.queueTask('wikidata', work.id);
+      store.setSetting('localizedMovieTitlesV2', '1');
     }
     return store;
   }
@@ -317,7 +324,21 @@ export class Store {
   applyDoubanTitle(id: number): void {
     const work = this.one<{ mediaType: Work['mediaType']; imdbId: string | null; titleZh: string; doubanTitleZh: string }>(
       'SELECT mediaType,imdbId,titleZh,doubanTitleZh FROM works WHERE id=?', [id]);
-    if (work) this.setWorkFields(id, { titleZh: movieChineseTitle(work, work.doubanTitleZh || work.titleZh) });
+    if (!work) return;
+    const sourced = work.mediaType === 'movie' ? preferredMovieTitle(work.titleZh, work.doubanTitleZh) : work.doubanTitleZh || work.titleZh;
+    const cached = work.mediaType === 'movie' && work.imdbId ? this.localizedMovieTitle(work.imdbId) : null;
+    this.setWorkFields(id, { titleZh: movieChineseTitle(work, cached ? preferredMovieTitle(sourced, cached.titleZh) : sourced) });
+  }
+  hasManualTitle(id: number): boolean {
+    const row = this.one<{ fields: string }>('SELECT fields FROM work_edits WHERE workId=?', [id]);
+    return Boolean(row && Object.hasOwn(JSON.parse(row.fields), 'titleZh'));
+  }
+  localizedMovieTitle(imdbId: string): { titleZh: string; fetchedAt: number } | null {
+    return this.one('SELECT titleZh,fetchedAt FROM localized_movie_titles WHERE imdbId=?', [imdbId]);
+  }
+  setLocalizedMovieTitle(imdbId: string, titleZh: string): void {
+    this.run('INSERT INTO localized_movie_titles(imdbId,titleZh,fetchedAt) VALUES(?,?,?) ON CONFLICT(imdbId) DO UPDATE SET titleZh=excluded.titleZh,fetchedAt=excluded.fetchedAt',
+      [imdbId, cleanTitle(titleZh), Date.now()]);
   }
   applyManualFields(id: number): void {
     const row = this.one<{ fields: string }>('SELECT fields FROM work_edits WHERE workId=?', [id]);
@@ -430,7 +451,7 @@ export class Store {
     this.run(`UPDATE tasks SET status='pending',error=NULL,updatedAt=? WHERE status='failed' AND EXISTS(
       SELECT 1 FROM works WHERE works.id=tasks.workId AND works.matchState!='ignored')`, [Date.now()]);
     // Manual source refreshes have history entries but may have no queued task.
-    for (const log of failed) this.queueTask(log.source === 'douban' ? 'douban' : 'tmdb', log.workId);
+    for (const log of failed) this.queueTask(log.source === 'wikidata' ? 'wikidata' : log.source === 'douban' ? 'douban' : 'tmdb', log.workId);
   }
   close(): void { this.save(); this.db.close(); }
 }

@@ -567,7 +567,7 @@ function LogsModal({ works, logs, job, onClose, onRetry }: { works: Work[]; logs
   const [filter, setFilter] = useState<'all' | ScrapeLog['status']>('all');
   const shown = filter === 'all' ? logs : logs.filter(item => item.status === filter);
   const label: Record<ScrapeLog['status'], string> = { pending: t("待处理"), running: t("抓取中"), done: t("成功"), failed: t("失败"), skipped: t("跳过") };
-  const source: Record<ScrapeLog['source'], string> = { tmdb: 'TMDB', omdb: 'OMDb', douban: t("豆瓣") };
+  const source: Record<ScrapeLog['source'], string> = { tmdb: 'TMDB', omdb: 'OMDb', douban: t("豆瓣"), wikidata: 'Wikidata' };
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal logs-modal" role="dialog" aria-modal="true" aria-label={t("抓取日志")} onMouseDown={event => event.stopPropagation()}>
     <div className="modal-header"><div><div className="eyebrow">METADATA ACTIVITY</div><h2>{t("抓取日志")}</h2></div><button className="icon-button" aria-label={t("关闭日志")} onClick={onClose}><X size={22}/></button></div>
     <div className="log-summary"><span>{t("成功影片 ")}{logs.filter(item => item.status === 'done').length}</span><span>{t("失败影片 ")}{logs.filter(item => item.status === 'failed').length}</span><span>{t("当前待处理 ")}{logs.filter(item => item.status === 'pending' || item.status === 'running').length}</span></div>
