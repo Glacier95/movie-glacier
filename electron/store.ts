@@ -5,6 +5,7 @@ import type { ParsedName } from './scanner.js';
 import type { MediaAsset, MediaType, Person, ScrapeLog, SeasonRating, Work } from '../src/shared.js';
 import { validateImdbTop250, type ImdbChartEntry } from './imdb-chart.js';
 import { cleanTitle, titleFields } from './title-cleanup.js';
+import { movieChineseTitle } from './movie-titles.js';
 
 type SqlValue = string | number | null;
 type Row = Record<string, unknown>;
@@ -93,6 +94,26 @@ export class Store {
           store.queueTask('tmdb', work.id);
       }
       store.setSetting('doubanDetailsV1', '1');
+    }
+    if (!store.getSetting('movieTitlesAndPostersV1')) {
+      const works = store.all<{ id: number; mediaType: Work['mediaType']; imdbId: string | null;
+        titleZh: string; doubanTitleZh: string; matchState: string }>('SELECT id,mediaType,imdbId,titleZh,doubanTitleZh,matchState FROM works');
+      for (const work of works) {
+        if (work.matchState === 'ignored') continue;
+        if (!store.hasManualFields(work.id)) {
+          const titleZh = movieChineseTitle(work, work.titleZh);
+          const doubanTitleZh = work.doubanTitleZh ? movieChineseTitle(work, work.doubanTitleZh) : '';
+          if (titleZh !== work.titleZh || doubanTitleZh !== work.doubanTitleZh)
+            store.setWorkFields(work.id, { titleZh, doubanTitleZh });
+          // Refetch other duplicate localized movie titles once, using their
+          // distinct IMDb identities. Existing IDs, assets and ratings survive.
+          if (work.mediaType === 'movie' && /\p{Script=Han}/u.test(work.titleZh) && works.some(other =>
+            other.id !== work.id && other.mediaType === 'movie' && other.titleZh === work.titleZh &&
+            other.imdbId && work.imdbId && other.imdbId !== work.imdbId)) store.queueTask('douban', work.id);
+        }
+        if (work.imdbId) store.queueTask('imdb', work.id);
+      }
+      store.setSetting('movieTitlesAndPostersV1', '1');
     }
     return store;
   }
@@ -294,8 +315,9 @@ export class Store {
     this.setWorkFields(id, { doubanId: null, doubanTitleZh: '', doubanOverviewZh: '', doubanTags: [] });
   }
   applyDoubanTitle(id: number): void {
-    const row = this.one<{ doubanTitleZh: string }>('SELECT doubanTitleZh FROM works WHERE id=?', [id]);
-    if (row?.doubanTitleZh) this.setWorkFields(id, { titleZh: row.doubanTitleZh });
+    const work = this.one<{ mediaType: Work['mediaType']; imdbId: string | null; titleZh: string; doubanTitleZh: string }>(
+      'SELECT mediaType,imdbId,titleZh,doubanTitleZh FROM works WHERE id=?', [id]);
+    if (work) this.setWorkFields(id, { titleZh: movieChineseTitle(work, work.doubanTitleZh || work.titleZh) });
   }
   applyManualFields(id: number): void {
     const row = this.one<{ fields: string }>('SELECT fields FROM work_edits WHERE workId=?', [id]);

@@ -44,6 +44,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **1.0.2** | 区分《指环王》三部曲的完整中文片名，修复系列标题提取与已有重复简称；默认优先使用 OMDb 海报，更新已有海报时保留下载失败的缓存。 | Distinguish the Lord of the Rings trilogy's full Chinese titles, preserve localized sequel names and repair existing franchise abbreviations; prefer OMDb posters and retain cached artwork when downloads fail. |
 | **1.0.1** | 修复同一片名字段中拼接的简繁重复名称；离线清理已有片库并在新抓取、保存时去重，保留不同译名和英文名。 | Remove concatenated Simplified/Traditional duplicates within a title; clean existing libraries offline and normalize newly fetched or saved titles while retaining distinct aliases and English names. |
 | **1.0.0** | 正式迈入 1.0：避免简繁中文片名重复显示；通过中文别名、连写季名和分季校验补抓后续季评分，更新库时重试缺失的分季评分。 | First 1.0 release: avoid duplicate Chinese titles across script variants; discover localized season aliases, validate season pages and retry missing season ratings on library updates. |
 | **0.7.3** | 修复重复年份导致的剧集片名识别；将《请回答1988》20 集正片与 SP 特别篇归入同一剧集，并修复已有错误条目。 | Fix episode titles containing repeated release years; group all 20 Reply 1988 episodes and its SP special under one series and repair existing misclassified entries. |

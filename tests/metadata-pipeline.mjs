@@ -33,7 +33,7 @@ try {
     const original = { id: 1, mediaType: 'movie', year: 2020, poster: 'existing-poster.jpg',
       backdrop: 'existing-backdrop.jpg', imdbId: 'tt1000001', matchState: 'matched', overview: 'Existing synopsis' };
     let fields;
-    const fixture = new Metadata({ work: () => original, setWorkFields: (_id, value) => { fields = value; },
+    const fixture = new Metadata({ work: () => original, getSecret: () => '', setWorkFields: (_id, value) => { fields = value; },
       applyDoubanTitle: () => {}, applyManualFields: () => {} }, app.getPath('userData'));
     fixture.tmdb = async resource => resource.endsWith('/external_ids') ? { imdb_id: '' }
       : resource.endsWith('/credits') ? { crew: [], cast: [] } : { title: 'Home', release_date: '2020-01-01' };

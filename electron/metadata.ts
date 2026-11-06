@@ -103,7 +103,7 @@ async function cachePosterUrl(url: string | null, userData: string, network: Ses
   }
   if (!response.headers.get('content-type')?.startsWith('image/')) throw new Error('OMDb 海报返回的不是图片');
   const data = Buffer.from(await response.arrayBuffer());
-  if (data.length > 10_000_000) throw new Error('OMDb 海报过大');
+  if (!data.length || data.length > 10_000_000) throw new Error('OMDb 海报大小无效');
   fs.writeFileSync(`${target}.tmp`, data);
   fs.renameSync(`${target}.tmp`, target);
   return name;
@@ -311,7 +311,18 @@ export class Metadata {
     })));
     const creators: Person[] = (zh.created_by ?? []).map((creator: any) => ({ id: String(creator.id), name: creator.name }));
     const warnings: string[] = [];
-    const poster = await cacheRemoteImage(zh.poster_path ?? en.poster_path, this.userData, this.network).catch(error => {
+    const imdbId = external.imdb_id || work.imdbId;
+    let poster = work.poster;
+    // OMDb artwork is preferred even when TMDB supplies the other metadata.
+    // Keep cached artwork on OMDb errors; TMDB fills only an empty poster slot.
+    if (imdbId && this.store.getSecret('omdb')) {
+      try {
+        const data = await this.omdb({ i: imdbId });
+        if (data.Response === 'False') throw new Error(`OMDb：${data.Error ?? '无结果'}`);
+        poster = await cachePosterUrl(safeOmdbPoster(data.Poster), this.userData, this.network) ?? poster;
+      } catch (error) { warnings.push(`OMDb 海报未下载：${String(error).replace(/^Error: /, '')}`); }
+    }
+    if (!poster) poster = await cacheRemoteImage(en.poster_path ?? zh.poster_path, this.userData, this.network).catch(error => {
       warnings.push(`海报未下载：${String(error).replace(/^Error: /, '')}`);
       return work.poster;
     });
@@ -320,7 +331,7 @@ export class Metadata {
       return work.backdrop;
     });
     this.store.setWorkFields(workId, {
-      tmdbId, imdbId: external.imdb_id || work.imdbId,
+      tmdbId, imdbId,
       titleZh: zh.title ?? zh.name ?? work.titleZh,
       titleEn: en.title ?? en.name ?? work.titleEn,
       originalTitle: en.original_title ?? en.original_name ?? work.originalTitle,
@@ -342,10 +353,12 @@ export class Metadata {
     const work = this.store.work(workId);
     if (!work?.imdbId) return false;
     const data = await this.omdb({ i: work.imdbId });
-    const score = Number(data.imdbRating);
     if (data.Response === 'False') throw new Error(`OMDb：${data.Error ?? '无结果'}`);
-    if (!Number.isFinite(score)) return false;
-    this.store.setRating(workId, 'imdb', null, score, Number(String(data.imdbVotes ?? '').replace(/,/g, '')) || null, work.imdbId);
-    return true;
+    const score = Number(data.imdbRating);
+    const hasRating = Number.isFinite(score);
+    if (hasRating) this.store.setRating(workId, 'imdb', null, score, Number(String(data.imdbVotes ?? '').replace(/,/g, '')) || null, work.imdbId);
+    const poster = await cachePosterUrl(safeOmdbPoster(data.Poster), this.userData, this.network);
+    if (poster) this.store.setWorkFields(workId, { poster });
+    return hasRating || Boolean(poster);
   }
 }
