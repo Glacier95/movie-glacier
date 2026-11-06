@@ -161,6 +161,7 @@ async function refreshDoubanWork(work: Work): Promise<string> {
       ...(subject.overviewZh?.trim() ? { doubanOverviewZh: subject.overviewZh.trim() } : {}),
       ...(subject.tagsZh?.length ? { doubanTags: subject.tagsZh } : {})
     });
+    store.applyDoubanTitle(work.id);
     store.applyManualFields(work.id);
     // A Chinese title can find the correct entry even when OMDb does not know
     // the release's English alias. Use the verified entry's IMDb ID to retry.

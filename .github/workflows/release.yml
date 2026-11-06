@@ -56,6 +56,11 @@ jobs:
       - name: Package Windows installer
         if: runner.os == 'Windows'
         run: pnpm exec electron-builder --win nsis --x64 --publish never
+      - name: Verify packaged titles and posters
+        if: runner.os == 'Windows'
+        env:
+          FILM_LIBRARY_PACKAGED: '1'
+        run: node tests/franchise-posters.mjs
       - name: Package macOS installers
         if: runner.os == 'macOS'
         env:

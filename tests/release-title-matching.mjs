@@ -53,7 +53,8 @@ try {
         globalThis.doubanQueries.push(query);
         const film = films.find(film => film.en === query || film.zh === query);
         return json(film ? [
-          { id: film.doubanId, title: film.zh, sub_title: film.en, year: String(film.year) },
+          // Suggestions can abbreviate a title; the selected detail page wins.
+          { id: film.doubanId, title: film === films[0] ? '完美' : film.zh, sub_title: film.en, year: String(film.year) },
           { id: '1234567', title: 'Other film', sub_title: 'Other film', year: String(film.year) }
         ] : []);
       }

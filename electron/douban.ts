@@ -152,7 +152,7 @@ export class Douban {
       if (season !== null && !doubanSeasonSubjectMatches(match, subject, season)) continue;
       if (season === null && work.imdbId && subject.imdbId && work.imdbId !== subject.imdbId) continue;
       if (work.year && subject.year && season === null && Math.abs(work.year - subject.year) > 1) continue;
-      return { ...subject, titleZh: match.title.trim() || subject.titleZh };
+      return { ...subject, titleZh: subject.titleZh || doubanChineseTitle(match.title) };
     }
     if (!sawSuggestions) {
       // The endpoint also responds with HTTP 200 + [] when a browser session

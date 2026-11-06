@@ -1,6 +1,7 @@
 import type { Work } from '../src/shared.js';
 import { normalizeTitle, parseName } from './scanner.js';
 import { knownSeries, titleQueries } from './media-titles.js';
+import { movieChineseTitle } from './movie-titles.js';
 
 export interface OmdbCandidate {
   Title: string;
@@ -95,7 +96,7 @@ export function omdbPeople(value: string | undefined): { id: string; name: strin
 
 export function omdbChineseTitle(work: Work, englishTitle: string): string {
   const prefix = work.titleZh.split(/[A-Za-z]/)[0]?.replace(/[\[\]【】()（）]/g, '').trim();
-  return prefix && /[\u3400-\u9fff]/.test(prefix) ? prefix : englishTitle;
+  return movieChineseTitle(work, prefix && /[\u3400-\u9fff]/.test(prefix) ? prefix : englishTitle);
 }
 
 export function safeOmdbPoster(value: string | undefined): string | null {

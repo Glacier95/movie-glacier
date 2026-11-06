@@ -13,7 +13,15 @@ const chineseGenres = new Set(['剧情','喜剧','动作','爱情','科幻','动
 
 export function doubanChineseTitle(value: string): string {
   const title = cleanTitle(value.replace(/[\u200e\u200f]/g, '').replace(/\s*\((?:19|20)\d{2}\).*/, '').trim());
-  return title.match(/^[\p{Script=Han}\d·：:！？!？、，,。\s]+/u)?.[0]?.trim() || title;
+  if (!/\p{Script=Han}/u.test(title)) return title;
+  // Split bilingual aliases at the English title, retaining punctuation,
+  // parenthesized part names and Roman numerals belonging to the Chinese title.
+  for (const match of title.matchAll(/\s+([A-Za-z][A-Za-z\d]*)/g)) {
+    const rest = title.slice(match.index + match[0].length);
+    if (/^[IVXLCDM]+$/.test(match[1]!) && /^\s*[:：.\-—–]?\s*(?:\p{Script=Han}|$)/u.test(rest)) continue;
+    return title.slice(0, match.index).trim();
+  }
+  return title;
 }
 
 export function doubanGenresFromMeta(meta: string): string[] {
