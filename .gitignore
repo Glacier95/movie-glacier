@@ -15,6 +15,7 @@ build/icon.png
 !.env.example
 *.sqlite
 *.sqlite-*
+*.sqlite.*
 *.db
 *.pem
 *.key

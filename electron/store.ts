@@ -7,6 +7,7 @@ import { validateImdbTop250, type ImdbChartEntry } from './imdb-chart.js';
 import { cleanTitle, titleFields } from './title-cleanup.js';
 import { movieChineseTitle } from './movie-titles.js';
 import { preferredMovieTitle } from './localized-movies.js';
+import { openDatabaseFile, writeSnapshot } from './database-files.js';
 
 type SqlValue = string | number | null;
 type Row = Record<string, unknown>;
@@ -51,12 +52,14 @@ CREATE TABLE IF NOT EXISTS person_aliases (id TEXT PRIMARY KEY, name TEXT NOT NU
 `;
 
 export class Store {
-  private constructor(private db: Database, private file: string, private secrets: SecretStorage) {}
+  private lastBackup = 0;
+  private constructor(private db: Database, private file: string, private secrets: SecretStorage,
+    readonly recoveredFrom: string | null) {}
 
   static async open(file: string, wasmPath: string, secrets: SecretStorage): Promise<Store> {
     const SQL: SqlJsStatic = await initSqlJs({ locateFile: () => wasmPath });
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const db = fs.existsSync(file) ? new SQL.Database(fs.readFileSync(file)) : new SQL.Database();
+    const { db, recoveredFrom } = openDatabaseFile(SQL, file);
     db.run(schema);
     const columns = db.exec('PRAGMA table_info(works)')[0]?.values.map(row => String(row[1])) ?? [];
     if (!columns.includes('ratingSeason')) db.run('ALTER TABLE works ADD COLUMN ratingSeason INTEGER');
@@ -73,7 +76,7 @@ export class Store {
     }
     const personColumns = db.exec('PRAGMA table_info(person_aliases)')[0]?.values.map(row => String(row[1])) ?? [];
     if (!personColumns.includes('aliases')) db.run("ALTER TABLE person_aliases ADD COLUMN aliases TEXT NOT NULL DEFAULT '[]'");
-    const store = new Store(db, file, secrets);
+    const store = new Store(db, file, secrets, recoveredFrom);
     store.save();
     if (!store.getSetting('concatenatedTitlesV1')) {
       for (const row of store.all<Row>('SELECT id,titleZh,titleEn,originalTitle,doubanTitleZh FROM works')) {
@@ -125,10 +128,14 @@ export class Store {
     return store;
   }
 
-  save(): void {
-    const temp = `${this.file}.tmp`;
-    fs.writeFileSync(temp, Buffer.from(this.db.export()));
-    fs.renameSync(temp, this.file);
+  save(forceBackup = false): void {
+    const bytes = this.db.export();
+    writeSnapshot(this.file, bytes);
+    if (forceBackup || Date.now() - this.lastBackup >= 5 * 60_000) {
+      this.lastBackup = Date.now();
+      try { writeSnapshot(this.file + '.bak', bytes); }
+      catch (error) { console.error('Library backup failed', error); }
+    }
   }
 
   run(sql: string, values: SqlValue[] = []): void { this.db.run(sql, values); this.save(); }
@@ -453,5 +460,5 @@ export class Store {
     // Manual source refreshes have history entries but may have no queued task.
     for (const log of failed) this.queueTask(log.source === 'wikidata' ? 'wikidata' : log.source === 'douban' ? 'douban' : 'tmdb', log.workId);
   }
-  close(): void { this.save(); this.db.close(); }
+  close(): void { try { this.save(true); } finally { this.db.close(); } }
 }
