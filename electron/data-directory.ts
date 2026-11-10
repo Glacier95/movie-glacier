@@ -21,7 +21,8 @@ export function prepareDataDirectory(target: string, legacyDirectories: string[]
       const staging = path.join(target, '.migration-staging');
       fs.mkdirSync(staging, { recursive: true });
       // Preserve Local State as well as cookies: it contains Chromium's encrypted key.
-      for (const name of ['library.sqlite', 'images', 'Local State', 'Preferences', 'Local Storage', 'Partitions', 'Network']) {
+      for (const name of ['library.sqlite', 'library.sqlite.tmp', 'library.sqlite.bak', 'library.sqlite.bak.tmp',
+        'images', 'Local State', 'Preferences', 'Local Storage', 'Partitions', 'Network']) {
         const from = path.join(source, name);
         if (fs.existsSync(from)) fs.cpSync(from, path.join(staging, name), { recursive: true, force: true });
       }

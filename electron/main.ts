@@ -599,10 +599,15 @@ function registerIpc(): void {
     if (Object.keys(edits).length) store.setManualFields(targetId, edits);
     store.setWorkFields(targetId, { matchState: 'manual' });
     store.syncTopRank(targetId);
-    if (store.work(targetId)?.imdbId) store.queueTask('imdb', targetId);
-    store.queueTask('douban', targetId);
+    const rematched = tmdbId !== null && tmdbId !== work.tmdbId;
+    const imdbChanged = imdbId !== work.imdbId;
+    const updated = store.work(targetId);
+    if ((rematched || imdbChanged) && updated?.imdbId) {
+      store.queueTask('imdb', targetId);
+      if (updated.mediaType === 'movie') store.queueTask('wikidata', targetId);
+    }
+    if (rematched || imdbChanged || doubanId !== work.doubanId) store.queueTask('douban', targetId);
     changed();
-    if (!job.running) void runJob('scan').catch(error => progress({ running: false, message: String(error) }));
     return targetId;
   });
   ipcMain.handle('ignoreWork', (_event, workId: number) => { store.ignoreWork(workId); changed(); });
@@ -682,11 +687,14 @@ const dataDirectory = testing && process.env.FILM_LIBRARY_DATA_DIR && path.isAbs
   ? process.env.FILM_LIBRARY_DATA_DIR
   : applicationDataDirectory(process.platform, app.isPackaged, app.getAppPath(), app.getPath('exe'), app.getPath('appData'));
 try {
-  prepareDataDirectory(dataDirectory, testing || !app.isPackaged ? [] : [
+  const legacyDirectories = testing || !app.isPackaged ? [] : [
     app.getPath('userData'), path.join(app.getPath('appData'), 'movie-glacier'), path.join(app.getPath('appData'), '私人影视库'),
     ...(process.platform === 'darwin' ? [path.join(path.dirname(app.getPath('exe')), 'user-data')] : [])
-  ]);
+  ];
+  fs.mkdirSync(dataDirectory, { recursive: true });
   app.setPath('userData', dataDirectory);
+  if (!app.requestSingleInstanceLock()) app.exit(0);
+  prepareDataDirectory(dataDirectory, legacyDirectories);
   app.setPath('sessionData', dataDirectory);
   app.setAppLogsPath(path.join(dataDirectory, 'logs'));
   app.setPath('crashDumps', path.join(dataDirectory, 'Crashpad'));
@@ -744,8 +752,20 @@ app.whenReady().then(async () => {
   douban = new Douban();
   registerIpc();
   await createWindow();
-}).catch(error => { console.error('影视库启动失败', error); dialog.showErrorBox('影视库启动失败', String(error)); });
+  if (store.recoveredFrom && mainWindow) {
+    void dialog.showMessageBox(mainWindow, {
+      type: 'info', title: 'Movie Glacier',
+      message: '已从本地副本恢复影视库 / Library restored from a local copy',
+      detail: store.recoveredFrom + '\n恢复后的片库以该副本保存时的内容为准。原损坏文件保留在数据目录。\nThe library reflects the recovered snapshot. The original damaged file remains in the data folder.'
+    });
+  }
+}).catch(error => {
+  console.error('影视库启动失败', error);
+  dialog.showErrorBox('影视库启动失败', String(error));
+  app.exit(1);
+});
 
 app.on('activate', () => { if (!mainWindow && store) void createWindow(); });
+app.on('second-instance', () => { mainWindow?.restore(); mainWindow?.focus(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => store?.close());
