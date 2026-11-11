@@ -96,7 +96,7 @@ export interface AppearanceSettings {
   backgroundBrightness: number;
 }
 export const appearanceDefaults: AppearanceSettings = {
-  panelBlur: 16, panelOpacity: 68, backgroundOpacity: 77, backgroundSaturation: 160, backgroundBrightness: 88
+  panelBlur: 3, panelOpacity: 30, backgroundOpacity: 77, backgroundSaturation: 160, backgroundBrightness: 88
 };
 export const backgroundBlurDefault = 5;
 export const appearanceControls: { key: keyof AppearanceSettings; group: 'panel' | 'background'; label: string; min: number; max: number; unit: string }[] = [

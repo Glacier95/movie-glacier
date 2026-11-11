@@ -1,6 +1,8 @@
 import type { Work } from '../src/shared.js';
 import { mediaTitleKey, parseName, type ParsedName } from './scanner.js';
 import { knownSeries } from './media-titles.js';
+import { movieAlias } from './movie-aliases.js';
+import { movieChineseTitle } from './movie-titles.js';
 import type { Store } from './store.js';
 
 export function localWorkMatches(work: Work, parsed: ParsedName): boolean {
@@ -12,31 +14,42 @@ export function localWorkMatches(work: Work, parsed: ParsedName): boolean {
 
 export function repairParsedWork(store: Store, workId: number, snapshot?: Work): boolean {
   const work = snapshot ?? store.work(workId);
-  if (!work || work.matchState === 'manual' || store.hasManualFields(workId)) return false;
+  if (!work || work.matchState === 'manual' || work.matchState === 'ignored' || store.hasManualFields(workId)) return false;
   const parsedAssets = work.assets.map(asset => ({ asset, parsed: parseName(asset.path, asset.kind) }));
   const first = parsedAssets[0]?.parsed;
   // Mixed titles need user review; never reclassify all assets on the strength of one file.
   if (!first || parsedAssets.some(({ parsed }) => parsed.mediaType !== first.mediaType || parsed.normalizedTitle !== first.normalizedTitle))
     return false;
-  const titlesAgree = [work.titleZh, work.titleEn, work.originalTitle].some(title => mediaTitleKey(title) === first.normalizedTitle);
+  const parsedMovie = first.mediaType === 'movie' ? movieAlias(first.title, first.year) : null;
+  const titlesAgree = [work.titleZh, work.titleEn, work.originalTitle].some(title => mediaTitleKey(title) === first.normalizedTitle ||
+    Boolean(parsedMovie && movieAlias(title, work.year)?.title === parsedMovie.title));
   const wrongSeries = first.mediaType === 'tv' && (work.mediaType !== 'tv' || (knownSeries(first.title) && !titlesAgree));
   const wrongPending = work.matchState === 'pending' && (!titlesAgree || work.mediaType !== first.mediaType);
   const wrongEpisodes = first.mediaType === 'tv' && parsedAssets.some(({ asset, parsed }) =>
     asset.season !== parsed.season || asset.episode !== parsed.episode);
-  if (!wrongSeries && !wrongPending && !wrongEpisodes) return false;
+  const movie = first.mediaType === 'movie' && first.year !== null ? movieAlias(first.title, first.year) : null;
+  const wrongMovie = Boolean(movie?.imdbId && (work.imdbId !== movie.imdbId || work.year !== movie.year));
+  if (!wrongSeries && !wrongPending && !wrongEpisodes && !wrongMovie) {
+    const titleZh = movieChineseTitle(work, work.titleZh);
+    if (titleZh !== work.titleZh) store.setWorkFields(workId, { titleZh });
+    return false;
+  }
   const years = parsedAssets.map(({ parsed }) => parsed.year).filter((year): year is number => year !== null);
-  if (wrongSeries || wrongPending) store.repairWorkFromName(workId, { ...first, year: years.length ? Math.min(...years) : null });
+  if (wrongSeries || wrongPending || wrongMovie) {
+    store.repairWorkFromName(workId, { ...first, title: wrongMovie ? movie!.title : first.title,
+      year: wrongMovie ? movie!.year : years.length ? Math.min(...years) : null });
+    if (wrongMovie) store.setWorkFields(workId, { imdbId: movie!.imdbId });
+  }
   for (const { asset, parsed } of parsedAssets) store.putAsset({ ...asset, season: parsed.season, episode: parsed.episode }, asset.lastSeen);
   store.queueTask('tmdb', workId);
   store.queueTask('douban', workId);
   return true;
 }
 
-/** Repair legacy season records even when no media files have changed. */
+/** Repair legacy movie/season records even when no media files have changed. */
 export function reconcileSeries(store: Store): void {
   for (const work of store.listWorks()) {
-    if (work.assets.some(asset => parseName(asset.path, asset.kind).mediaType === 'tv'))
-      repairParsedWork(store, work.id, work);
+    repairParsedWork(store, work.id, work);
   }
   const groups = new Map<string, Work[]>();
   for (const work of store.listWorks()) {

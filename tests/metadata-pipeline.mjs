@@ -56,6 +56,8 @@ try {
     // All provider behavior is deterministic; no provider requests or credentials are used.
     Store.prototype.getSecret = () => 'fixture-only';
     Metadata.prototype.checkTmdb = async () => {};
+    // Existing source-isolation cases exercise the TMDB fallback path.
+    Metadata.prototype.checkOmdb = async () => { throw new Error('fixture OMDb unavailable'); };
     Metadata.prototype.hydrate = async function (id, tmdbId) {
       globalThis.fixtureStore = this.store;
       this.store.setWorkFields(id, { tmdbId, titleEn: 'Hydrated fixture', imdbId: 'tt1000001' });

@@ -234,7 +234,7 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
     }
     job.total++;
     const work = store.work(task.workId);
-    if (!work) { store.taskDone(task.id); job.done++; continue; }
+    if (!work || work.matchState === 'ignored') { store.taskSkipped(task.id, '已忽略资源'); job.done++; continue; }
     store.taskRunning(task.id);
     changed();
     progress({ phase: `正在获取《${work.titleZh || work.titleEn}》资料`, done: job.done });
@@ -245,20 +245,21 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
       if (task.type === 'tmdb') {
         if (!metadataSource) throw new Error('未配置可用的资料源');
         let targetId = work.id;
+        const hydrateTmdb = async () => {
+          let tmdbId = work.tmdbId;
+          if (!tmdbId && work.imdbId) tmdbId = await metadata.findByImdb(work.mediaType, work.imdbId);
+          if (!tmdbId) {
+            const candidates = await metadata.search(work.mediaType, work.titleZh || work.titleEn, lookupYear(work));
+            tmdbId = metadata.chooseExact(work.titleZh || work.titleEn, lookupYear(work), candidates)?.id ?? null;
+          }
+          if (!tmdbId) throw new Error('TMDB 未能可靠匹配');
+          const existing = store.findWorkByTmdb(work.mediaType, tmdbId);
+          if (existing && existing !== work.id) { store.moveAssets(work.id, existing); targetId = existing; return ''; }
+          return (await metadata.hydrate(work.id, tmdbId)).join('；');
+        };
         if (metadataSource === 'tmdb') {
           try {
-            let tmdbId = work.tmdbId;
-            if (!tmdbId && work.imdbId) tmdbId = await metadata.findByImdb(work.mediaType, work.imdbId);
-            if (!tmdbId) {
-              const candidates = await metadata.search(work.mediaType, work.titleZh || work.titleEn, lookupYear(work));
-              tmdbId = metadata.chooseExact(work.titleZh || work.titleEn, lookupYear(work), candidates)?.id ?? null;
-            }
-            if (!tmdbId) throw new Error('TMDB 未能可靠匹配');
-            const existing = store.findWorkByTmdb(work.mediaType, tmdbId);
-            if (existing && existing !== work.id) {
-              store.moveAssets(work.id, existing);
-              targetId = existing;
-            } else note = (await metadata.hydrate(work.id, tmdbId)).join('；');
+            note = await hydrateTmdb();
             logSource = 'tmdb';
           } catch (error) {
             if (!store.getSecret('omdb') || unavailable.has('omdb')) throw error;
@@ -268,7 +269,17 @@ async function runTasks(initialSource: 'tmdb' | 'omdb' | null): Promise<void> {
           }
         } else {
           logSource = 'omdb';
-          note = (await metadata.hydrateOmdb(work.id)).join('；');
+          try { note = (await metadata.hydrateOmdb(work.id)).join('；'); }
+          catch (error) {
+            if (!store.getSecret('tmdb') || unavailable.has('tmdb')) throw error;
+            // Probe the secondary provider only after OMDb actually fails.
+            // Keep an outage/quota from causing a slow probe for every film.
+            try { await metadata.checkTmdb(); }
+            catch { unavailable.add('tmdb'); throw error; }
+            if (networkFailure(error)) { unavailable.add('omdb'); metadataSource = 'tmdb'; }
+            logSource = 'tmdb';
+            note = `OMDb 不可用，改用 TMDB；${await hydrateTmdb()}`;
+          }
         }
         if (logSource === 'omdb') {
           const imdbId = store.work(work.id)?.imdbId;
@@ -392,20 +403,20 @@ async function runJob(kind: 'scan' | 'refresh', forceScan = false): Promise<JobS
     const needsMetadata = store.pendingTasks().some(task => task.type === 'tmdb');
     let metadataSource: 'tmdb' | 'omdb' | null = null;
     if (needsMetadata) {
-      let tmdbError = '';
-      if (store.getSecret('tmdb')) {
-        try { await metadata.checkTmdb(); metadataSource = 'tmdb'; }
-        catch (error) { tmdbError = String(error).replace(/^Error: /, ''); }
-      }
-      if (!metadataSource && store.getSecret('omdb')) {
+      const sourceErrors: string[] = [];
+      if (store.getSecret('omdb')) {
         try {
           await metadata.checkOmdb();
           metadataSource = 'omdb';
-          progress({ message: tmdbError ? 'TMDB 暂不可达，已自动改用 OMDb 抓取资料' : '正在使用 OMDb 抓取资料' });
-        } catch (error) { tmdbError = `TMDB：${tmdbError || '未配置'}；OMDb：${String(error).replace(/^Error: /, '')}`; }
+          progress({ message: '正在优先使用 OMDb 抓取资料' });
+        } catch (error) { sourceErrors.push(`OMDb：${String(error).replace(/^Error: /, '')}`); }
+      }
+      if (!metadataSource && store.getSecret('tmdb')) {
+        try { await metadata.checkTmdb(); metadataSource = 'tmdb'; }
+        catch (error) { sourceErrors.push(`TMDB：${String(error).replace(/^Error: /, '')}`); }
       }
       if (!metadataSource) {
-        const message = tmdbError || '请在设置中配置 TMDB 或 OMDb 凭据';
+        const message = sourceErrors.join('；') || '请在设置中配置 TMDB 或 OMDb 凭据';
         const first = store.pendingTasks().find(task => task.type === 'tmdb');
         if (first) store.taskDone(first.id, message);
         job.failures++;

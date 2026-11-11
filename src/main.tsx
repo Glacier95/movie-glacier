@@ -2,7 +2,7 @@ import { t, message, isEnglish, locale, setLanguage, useLanguage } from './i18n'
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
-import { ArrowLeft, Check, ChevronDown, ExternalLink, Film, Folder, FolderOpen, HardDrive, KeyRound, ListChecks, LogIn, LogOut,
+import { ArrowLeft, Check, ChevronDown, ExternalLink, EyeOff, Film, Folder, FolderOpen, HardDrive, KeyRound, ListChecks, LogIn, LogOut,
   Maximize2, Minimize2, Pencil, Play, Plus, RefreshCcw, Search, Settings2, SlidersHorizontal, Star, Tags, UserRound, X } from 'lucide-react';
 import type { ConnectionChecks, JobState, MatchCandidate, MediaAsset, MetadataSource, Person, PublicSettings, ScrapeLog, Work, WorkEdit } from './shared';
 import { backgroundBlurDefault, posterWallDefaults, posterWallControls, appearanceDefaults, appearanceControls, type AppearanceSettings, type PosterWallSettings } from './shared';
@@ -95,6 +95,8 @@ function App() {
   const [logsOpen, setLogsOpen] = useState(false);
   const [scrapeLogs, setScrapeLogs] = useState<ScrapeLog[]>([]);
   const [editing, setEditing] = useState(false);
+  const [ignoreTarget, setIgnoreTarget] = useState<{ id: number; title: string; path: string } | null>(null);
+  const [ignoreBusy, setIgnoreBusy] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -352,7 +354,7 @@ function App() {
   }, [selectedId, tab, settingsOpen, settings.needsSetup, logsOpen, editing, sortOpen, cardMenu]);
 
   useEffect(() => {
-    if (!settingsOpen && !settings.needsSetup && !logsOpen && !editing) return;
+    if (!settingsOpen && !settings.needsSetup && !logsOpen && !editing && !ignoreTarget) return;
     const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
     const dialog = dialogs[dialogs.length - 1];
     if (!dialog) return;
@@ -365,7 +367,8 @@ function App() {
     const trap = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault(); event.stopPropagation();
-        if (logsOpen) setLogsOpen(false);
+        if (ignoreTarget) { if (!ignoreBusy) setIgnoreTarget(null); }
+        else if (logsOpen) setLogsOpen(false);
         else if (editing) setEditing(false);
         else if (!settings.needsSetup) { setSettingsOpen(false); setBlurPreview(null); setWallPreview(null); setAppearancePreview(null); }
       }
@@ -380,7 +383,24 @@ function App() {
     };
     document.addEventListener('keydown', trap, true);
     return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', trap, true); previousFocus?.focus({ preventScroll: true }); };
-  }, [settingsOpen, settings.needsSetup, logsOpen, editing]);
+  }, [settingsOpen, settings.needsSetup, logsOpen, editing, ignoreTarget, ignoreBusy]);
+
+  function requestIgnore(id: number) {
+    const work = works.find(item => item.id === id);
+    if (work) setIgnoreTarget({ id, title: displayTitle(work), path: work.assets[0]?.path ?? '' });
+  }
+  async function confirmIgnore() {
+    if (!ignoreTarget || ignoreBusy) return;
+    setIgnoreBusy(true);
+    try {
+      await window.library.ignoreWork(ignoreTarget.id);
+      if (selectedId === ignoreTarget.id) { setEditing(false); setSelectedId(null); }
+      await reload();
+      setScrapeLogs(await window.library.listScrapeLogs());
+      setIgnoreTarget(null);
+    } catch (cause) { setError(String(cause)); }
+    finally { setIgnoreBusy(false); }
+  }
 
   const appearance = appearancePreview ?? settings;
   return <div className={`app-shell ${isMac ? 'platform-mac' : ''} ${fullscreen ? 'is-fullscreen' : ''}`} style={{ '--ambient-blur': `${blurPreview ?? settings.backgroundBlur}px`, '--panel-blur': `${appearance.panelBlur}px`, '--panel-opacity': appearance.panelOpacity / 100, '--ambient-opacity': appearance.backgroundOpacity / 100, '--ambient-saturation': appearance.backgroundSaturation / 100, '--ambient-brightness': appearance.backgroundBrightness / 100 } as React.CSSProperties}>
@@ -457,8 +477,13 @@ function App() {
     </div>}
     {error && <div className="toast" role="alert"><span>{message(error)}</span><button onClick={() => setError('')}><X size={16}/></button></div>}
     {(settingsOpen || settings.needsSetup) && <SettingsModal job={job} onLogs={() => setLogsOpen(true)} settings={settings} onboarding={settings.needsSetup} onClose={() => { setSettingsOpen(false); setBlurPreview(null); setWallPreview(null); setAppearancePreview(null); }} onSave={async patch => { const retry = settings.needsSetup || patch.roots?.some(root => !settings.roots.includes(root)) || patch.proxyUrl !== settings.proxyUrl || Boolean(patch.tmdbKey || patch.omdbKey); await window.library.setSettings(patch); await reload(); if (retry) void runJobAction(window.library.updateLibrary); }} onAppearancePreview={setAppearancePreview} onWallPreview={setWallPreview} onBlurPreview={setBlurPreview} onRun={runJobAction} onError={setError}/>}
-    {logsOpen && <LogsModal works={works} logs={scrapeLogs} job={job} onClose={() => setLogsOpen(false)} onRetry={() => void runJobAction(window.library.retryFailed)}/>}
-    {editing && selected && <EditModal work={selected} onClose={() => setEditing(false)} onSaved={async id => { setSelectedId(id); setEditing(false); await reload(); }} onIgnored={async () => { setEditing(false); setSelectedId(null); await reload(); }} onError={setError}/>}
+    {logsOpen && <LogsModal works={works} logs={scrapeLogs} job={job} onClose={() => setLogsOpen(false)} onRetry={() => void runJobAction(window.library.retryFailed)} onIgnore={requestIgnore}/>}
+    {editing && selected && <EditModal work={selected} onClose={() => setEditing(false)} onSaved={async id => { setSelectedId(id); setEditing(false); await reload(); }} onIgnore={() => requestIgnore(selected.id)} onError={setError}/>}
+    {ignoreTarget && <div className="modal-backdrop ignore-backdrop" onMouseDown={() => { if (!ignoreBusy) setIgnoreTarget(null); }}><div className="modal ignore-modal" role="dialog" aria-modal="true" aria-labelledby="ignore-heading" aria-describedby="ignore-description" onMouseDown={event => event.stopPropagation()}>
+      <div className="modal-header"><div className="ignore-heading"><span className="ignore-symbol"><EyeOff size={22}/></span><h2 id="ignore-heading">{t("忽略此资源")}</h2></div><button className="icon-button" disabled={ignoreBusy} aria-label={t("关闭")} onClick={() => setIgnoreTarget(null)}><X size={20}/></button></div>
+      <div className="modal-scroll"><p id="ignore-description" className="helper">{t("资源将从片库和抓取队列中隐藏，原始文件不会删除。你可以随时在设置中恢复。")}</p><div className="ignore-resource"><strong>{ignoreTarget.title}</strong>{ignoreTarget.path && <small>{ignoreTarget.path}</small>}</div></div>
+      <div className="modal-footer"><button className="secondary-button" disabled={ignoreBusy} onClick={() => setIgnoreTarget(null)}>{t("取消")}</button><button className="primary-button" disabled={ignoreBusy} onClick={() => void confirmIgnore()}><EyeOff size={16}/>{ignoreBusy ? t("处理中") : t("确认忽略")}</button></div>
+    </div></div>}
   </div>;
 }
 
@@ -523,7 +548,12 @@ function SettingsModal({ onAppearancePreview, onWallPreview, job, onLogs, settin
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ignored, setIgnored] = useState<{ id: number; title: string; path: string }[]>([]);
-  useEffect(() => { if (!onboarding) void window.library.listIgnored().then(setIgnored); }, [onboarding]);
+  useEffect(() => {
+    if (onboarding) return;
+    const refresh = () => { void window.library.listIgnored().then(setIgnored).catch(error => onError(String(error))); };
+    refresh();
+    return window.library.onChanged(refresh);
+  }, [onboarding]);
   async function save() {
     if (onboarding && (!roots.length || (!settings.hasTmdbKey && !tmdbKey.trim() && !settings.hasOmdbKey && !omdbKey.trim()))) {
       onError(t("首次使用请先选择影视目录，并填写至少一种资料源凭据；无代理时建议填写 OMDb API Key"));
@@ -544,7 +574,7 @@ function SettingsModal({ onAppearancePreview, onWallPreview, job, onLogs, settin
   return <div className="modal-backdrop" onMouseDown={onboarding ? undefined : onClose}><div className="modal settings-modal" role="dialog" aria-modal="true" aria-label={onboarding ? t("首次配置") : t("设置")} onMouseDown={event => event.stopPropagation()}><div className="modal-header"><div><div className="eyebrow">{onboarding ? 'WELCOME TO MOVIE GLACIER' : 'PREFERENCES'}</div><h2>{onboarding ? t("首次配置") : t("设置")}</h2></div>{!onboarding && <button className="icon-button" onClick={onClose}><X size={22}/></button>}</div><div className="modal-scroll">
     {!onboarding && <section className="settings-quick-actions"><button className="secondary-button" onClick={onLogs}><ListChecks size={17}/>{t("抓取日志")}</button><button className="primary-button" disabled={job.running || !settings.roots.length} onClick={() => void onRun(window.library.updateLibrary)}><RefreshCcw size={17} className={job.running ? 'spin' : ''}/>{job.running ? t("正在更新") : t("更新库")}</button></section>}
     <section><div className="modal-section-head"><h3>{t('界面语言')}</h3></div><div className="language-options" role="group" aria-label={t('界面语言')}><button type="button" aria-pressed={language === 'zh'} onClick={() => chooseLanguage('zh')}>{isEnglish() ? 'Chinese' : '中文'}</button><button type="button" aria-pressed={language === 'en'} onClick={() => chooseLanguage('en')}>English</button></div><p className="helper">{t('保存后切换界面语言。英文模式隐藏中文片名、中文简介与中文标签。')}</p></section>
-    {onboarding && <p className="setup-intro">{t("设置好目录和至少一种资料来源后，软件会自动识别文件名。TMDB 无法连接时会自动使用 OMDb 抓取海报、演职员和 IMDb 评分；OMDb 无需 IMDb 账号。")}</p>}
+    {onboarding && <p className="setup-intro">{t("设置好目录和至少一种资料来源后，软件会自动识别文件名。默认优先使用 OMDb 抓取海报、演职员和 IMDb 评分，失败时尝试 TMDB；OMDb 无需 IMDb 账号。")}</p>}
     <section><div className="modal-section-head"><h3><Folder size={18}/>{t("影视目录 ")}<span className="root-count">{roots.length} {t(" 个")}</span></h3><button className="tiny-link" onClick={async () => { const folders = await window.library.chooseFolders(); setRoots(current => [...new Set([...current, ...folders])]); }}><Plus size={16}/>{t("添加文件夹")}</button></div><p className="helper">{t("可以添加多个本地文件夹；以后随时回来继续添加。扫描时会检查全部目录，包括新放入的影片。包含关系的目录会自动合并，移除目录不会删除文件。")}</p>{roots.length ? <div className="root-list">{roots.map(root => <div key={root}><Folder size={18}/><span title={root}>{root}</span><button title={t("移除目录")} aria-label={t("移除目录 {0}", root)} onClick={() => setRoots(current => current.filter(item => item !== root))}><X size={16}/></button></div>)}</div> : <div className="empty-row">{t("尚未选择目录")}</div>}</section>
     <section><div className="modal-section-head"><h3><Play size={18}/>{isMac ? t("播放器") : 'PotPlayer'}</h3><button className="tiny-link" onClick={async () => { const player = await window.library.choosePlayer(); if (player) setPlayerPath(player); }}>{t("选择程序")}</button></div><div className="path-display">{playerPath === 'system' || (!playerPath && isMac) ? t("系统默认播放器") : playerPath || t("尚未找到 PotPlayer")}</div>{isMac && <><p className="helper">{t("自动识别 IINA 或 VLC，也可以选择其他 .app 播放器。")}</p><button className="tiny-link" onClick={() => setPlayerPath('system')}>{t("使用系统默认播放器")}</button></>}</section>
     <section className="ambient-settings"><div className="modal-section-head"><h3>{t("主页与详情 · 海报背景")}</h3><button className="tiny-link" onClick={() => resetAppearance('background')}>{t("恢复默认效果")}</button></div><p className="helper">{t("调节海报色彩背景的模糊程度。拖动时可实时预览，保存后在主页和详情页生效。")}</p><label className="blur-control"><div className="wall-control-heading"><span>{t("背景模糊程度")}</span><output className="blur-value">{backgroundBlur} px</output></div><input type="range" min="0" max="50" step="1" aria-label={t("背景模糊程度")} value={backgroundBlur} style={{ '--blur-progress': `${backgroundBlur / 50 * 100}%` } as React.CSSProperties} onChange={event => { const value = Number(event.target.value); setBackgroundBlur(value); onBlurPreview(value); }}/><span><small>{t("清晰")}</small><small>{t("柔和")}</small></span></label>{appearanceSliders('background')}</section>
@@ -553,8 +583,8 @@ function SettingsModal({ onAppearancePreview, onWallPreview, job, onLogs, settin
       {posterWallControls.map(control => <label className="blur-control" key={control.key}><div className="wall-control-heading"><span>{t(control.label)}</span><output className="blur-value">{wallSettings[control.key]} {control.unit}</output></div><input type="range" min={control.min} max={control.max} step="1" aria-label={t(control.label)} value={wallSettings[control.key]} style={{ '--blur-progress': `${(wallSettings[control.key] - control.min) / (control.max - control.min) * 100}%` } as React.CSSProperties} onChange={event => previewWall({ ...wallSettings, [control.key]: Number(event.target.value) })}/><span><small>{control.min} {control.unit}</small><small>{control.max} {control.unit}</small></span></label>)}
     </section>
     <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("网络连接")}</h3></div><p className="helper">{t("代理地址留空时按系统网络设置连接；没有系统代理时会直连。仅在当前电脑直连失败时填写本地 HTTP 或 SOCKS5 代理地址。此设置用于 TMDB、OMDb 和 IMDb 榜单请求。")}</p><label className="setting-label">{t("代理地址（可选）")}<input value={proxyUrl} onChange={event => setProxyUrl(event.target.value)} placeholder={t("留空直连；或填写 http://127.0.0.1:7890")} autoComplete="off"/></label></section>
-    <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("TMDB · 英文资料与备用海报（可选）")}</h3><button className="tiny-link" onClick={() => void window.library.openHelp('tmdb')}><ExternalLink size={14}/>{t("打开申请页面")}</button></div><p className="helper">{t("1. 注册或登录 TMDB。2. 进入账户设置 → API，申请访问凭据。3. 复制 ")}<strong>API Read Access Token</strong>{t("（较长的一串字符），粘贴到下方。TMDB 在当前网络不可达时，软件会改用 OMDb。")}</p><label className="setting-label">{t("TMDB 读取令牌 ")}<span>{settings.hasTmdbKey ? t("✓ 已加密保存") : t("未配置")}</span><input type="password" value={tmdbKey} onChange={event => setTmdbKey(event.target.value)} placeholder={settings.hasTmdbKey ? t("已保存；留空保持原值，输入新令牌可更换") : t("粘贴 TMDB API Read Access Token")} autoComplete="off"/></label></section>
-    <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("OMDb · 默认海报与备用资料源")}</h3><button className="tiny-link" onClick={() => void window.library.openHelp('omdb')}><ExternalLink size={14}/>{t("打开申请页面")}</button></div><p className="helper">{t("1. 打开 OMDb 的 Key 申请页，选择免费方案并填写邮箱。2. 在收到的邮件中激活 Key。3. 把 Key 粘贴到下方。可获取英文片名、海报、简介、演职员和 IMDb 评分；无需 IMDb 账号。无代理电脑请先点击下方“测试连接与凭据”。")}</p><label className="setting-label">OMDb API Key <span>{settings.hasOmdbKey ? t("✓ 已加密保存") : t("未配置")}</span><input type="password" value={omdbKey} onChange={event => setOmdbKey(event.target.value)} placeholder={settings.hasOmdbKey ? t("已保存；留空保持原值，输入新 Key 可更换") : t("粘贴 OMDb API Key")} autoComplete="off"/></label></section>
+    <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("TMDB · 备用资料与海报（可选）")}</h3><button className="tiny-link" onClick={() => void window.library.openHelp('tmdb')}><ExternalLink size={14}/>{t("打开申请页面")}</button></div><p className="helper">{t("1. 注册或登录 TMDB。2. 进入账户设置 → API，申请访问凭据。3. 复制 ")}<strong>API Read Access Token</strong>{t("（较长的一串字符），粘贴到下方。TMDB 在当前网络不可达时，软件会改用 OMDb。")}</p><label className="setting-label">{t("TMDB 读取令牌 ")}<span>{settings.hasTmdbKey ? t("✓ 已加密保存") : t("未配置")}</span><input type="password" value={tmdbKey} onChange={event => setTmdbKey(event.target.value)} placeholder={settings.hasTmdbKey ? t("已保存；留空保持原值，输入新令牌可更换") : t("粘贴 TMDB API Read Access Token")} autoComplete="off"/></label></section>
+    <section><div className="modal-section-head"><h3><KeyRound size={18}/>{t("OMDb · 默认资料源与海报")}</h3><button className="tiny-link" onClick={() => void window.library.openHelp('omdb')}><ExternalLink size={14}/>{t("打开申请页面")}</button></div><p className="helper">{t("1. 打开 OMDb 的 Key 申请页，选择免费方案并填写邮箱。2. 在收到的邮件中激活 Key。3. 把 Key 粘贴到下方。可获取英文片名、海报、简介、演职员和 IMDb 评分；无需 IMDb 账号。无代理电脑请先点击下方“测试连接与凭据”。")}</p><label className="setting-label">OMDb API Key <span>{settings.hasOmdbKey ? t("✓ 已加密保存") : t("未配置")}</span><input type="password" value={omdbKey} onChange={event => setOmdbKey(event.target.value)} placeholder={settings.hasOmdbKey ? t("已保存；留空保持原值，输入新 Key 可更换") : t("粘贴 OMDb API Key")} autoComplete="off"/></label></section>
     <section><div className="modal-section-head"><h3><ListChecks size={18}/>{t("检测资料源连接")}</h3><button className="secondary-button small" disabled={checking} onClick={() => void testConnection()}>{checking ? t("检测中…") : t("测试连接与凭据")}</button></div><p className="helper">{t("会使用上方当前输入的令牌和代理地址；留空的令牌沿用已保存值。检测不会修改设置。")}</p>{checks && <><div className="connection-results"><div className={checks.tmdb.ok ? 'ok' : 'fail'}><strong>TMDB {checks.tmdb.ok ? t("成功") : t("失败")}</strong><span>{message(checks.tmdb.message)}</span></div><div className={checks.omdb.ok ? 'ok' : 'fail'}><strong>OMDb {checks.omdb.ok ? t("成功") : t("失败")}</strong><span>{message(checks.omdb.message)}</span></div></div>{!checks.tmdb.ok && checks.omdb.ok && <p className="helper">{t("OMDb 已可用；TMDB 失败不会阻止电影入库与基础资料抓取。")}</p>}</>}</section>
     <section><div className="modal-section-head"><h3><Star size={18}/>{t("豆瓣 · 中文资料、评分与 Top250")}</h3></div><p className="helper">{t("电影会从豆瓣补全中文片名、简介和类型标签。公开搜索和榜单一般无需登录；遇到访问频繁或验证时会暂停并保留待处理任务。若出现验证提示，点击“登录 / 验证”，在打开的豆瓣官方网页完成登录，然后重试失败任务。软件仅保存网页会话，不保存密码。")}</p><div className="douban-row"><div><strong>{t("豆瓣网页会话")}</strong><small>{message(settings.doubanStatus)}</small></div><button className="secondary-button small" onClick={() => void onRun(window.library.doubanLogin)}><LogIn size={15}/>{t("登录 / 验证")}</button><button className="text-button" onClick={() => void onRun(window.library.doubanLogout)}><LogOut size={15}/>{t("退出")}</button></div></section>
     <section><div className="modal-section-head"><h3><Star size={18}/>IMDb Top 250</h3></div><p className="helper">{t("从 IMDb 官方电影榜单获取排名，按 IMDb 条目 ID 关联本地电影，无需 API Key。更新库时每七天检查一次；刷新全部资料可强制更新。访问失败时保留上次完整榜单。")}</p><p className="helper">{t("榜单更新于 ")}{humanDate(settings.imdbTop250UpdatedAt)}</p><div className="douban-row"><p className="helper">{t("如需人机验证，打开 IMDb 官方页面完成后，点击“重试失败任务”。")}</p><button className="secondary-button small" onClick={() => void onRun(window.library.imdbVerify)}><ExternalLink size={15}/>{t("打开 IMDb / 验证")}</button></div></section>
@@ -563,7 +593,7 @@ function SettingsModal({ onAppearancePreview, onWallPreview, job, onLogs, settin
   </div><div className="modal-footer">{!onboarding && <button className="text-button" onClick={onClose}>{t("取消")}</button>}<button className="primary-button" disabled={saving} onClick={() => void save()}>{saving ? t("保存中") : onboarding ? t("完成设置并开始扫描") : t("保存设置")}</button></div></div></div>;
 }
 
-function LogsModal({ works, logs, job, onClose, onRetry }: { works: Work[]; logs: ScrapeLog[]; job: JobState; onClose: () => void; onRetry: () => void }) {
+function LogsModal({ works, logs, job, onClose, onRetry, onIgnore }: { works: Work[]; logs: ScrapeLog[]; job: JobState; onClose: () => void; onRetry: () => void; onIgnore: (id: number) => void }) {
   const [filter, setFilter] = useState<'all' | ScrapeLog['status']>('all');
   const shown = filter === 'all' ? logs : logs.filter(item => item.status === filter);
   const label: Record<ScrapeLog['status'], string> = { pending: t("待处理"), running: t("抓取中"), done: t("成功"), failed: t("失败"), skipped: t("跳过") };
@@ -572,12 +602,12 @@ function LogsModal({ works, logs, job, onClose, onRetry }: { works: Work[]; logs
     <div className="modal-header"><div><div className="eyebrow">METADATA ACTIVITY</div><h2>{t("抓取日志")}</h2></div><button className="icon-button" aria-label={t("关闭日志")} onClick={onClose}><X size={22}/></button></div>
     <div className="log-summary"><span>{t("成功影片 ")}{logs.filter(item => item.status === 'done').length}</span><span>{t("失败影片 ")}{logs.filter(item => item.status === 'failed').length}</span><span>{t("当前待处理 ")}{logs.filter(item => item.status === 'pending' || item.status === 'running').length}</span></div>
     <div className="log-filters">{(['all', 'failed', 'done', 'pending', 'skipped'] as const).map(status => <button key={status} className={filter === status ? 'active' : ''} onClick={() => setFilter(status)}>{status === 'all' ? t("全部") : label[status]}</button>)}</div>
-    <div className="modal-scroll log-list">{shown.length ? shown.map(item => <div className="log-entry" key={item.id}><div className="log-entry-top"><strong>{isEnglish() ? englishTitle(works.find(work => work.id === item.workId) ?? { titleEn: '', originalTitle: item.title } as Work) : item.title}</strong><span className={`log-status ${item.status}`}>{label[item.status]}</span></div><div className="log-entry-meta">{source[item.source]} · {new Date(item.updatedAt).toLocaleString(locale())}</div>{item.message && <p>{item.message === 'TypeError: fetch failed' ? t("网络连接失败（旧版记录）；请在设置中测试资料源连接") : libraryMessage(item.message, works)}</p>}</div>) : <div className="empty-row">{logs.length ? t("没有符合条件的记录") : t("暂无抓取记录。扫描入库后会显示每部影片的抓取结果。")}</div>}</div>
+    <div className="modal-scroll log-list">{shown.length ? shown.map(item => <div className="log-entry" key={item.id}><div className="log-entry-top"><strong>{isEnglish() ? englishTitle(works.find(work => work.id === item.workId) ?? { titleEn: '', originalTitle: item.title } as Work) : item.title}</strong><span className={`log-status ${item.status}`}>{label[item.status]}</span>{(item.status === 'failed' || item.status === 'pending') && <button className="text-button log-ignore" onClick={() => onIgnore(item.workId)}><EyeOff size={14}/>{t("忽略此资源")}</button>}</div><div className="log-entry-meta">{source[item.source]} · {new Date(item.updatedAt).toLocaleString(locale())}</div>{item.message && <p>{item.message === 'TypeError: fetch failed' ? t("网络连接失败（旧版记录）；请在设置中测试资料源连接") : libraryMessage(item.message, works)}</p>}</div>) : <div className="empty-row">{logs.length ? t("没有符合条件的记录") : t("暂无抓取记录。扫描入库后会显示每部影片的抓取结果。")}</div>}</div>
     <div className="modal-footer"><span className="log-footer-note">{t("每部影片仅显示最新一次抓取 · 共 ")}{logs.length} {t(" 部")}</span><button className="secondary-button small" disabled={job.running} onClick={onRetry}><RefreshCcw size={15}/>{t("重试失败与待处理")}</button><button className="primary-button" onClick={onClose}>{t("关闭")}</button></div>
   </div></div>;
 }
 
-function EditModal({ work, onClose, onSaved, onIgnored, onError }: { work: Work; onClose: () => void; onSaved: (id: number) => Promise<void>; onIgnored: () => Promise<void>; onError: (error: string) => void }) {
+function EditModal({ work, onClose, onSaved, onIgnore, onError }: { work: Work; onClose: () => void; onSaved: (id: number) => Promise<void>; onIgnore: () => void; onError: (error: string) => void }) {
   const [edit, setEdit] = useState<WorkEdit>({ titleZh: work.titleZh, titleEn: work.titleEn, year: work.year,
     overview: work.overview, tmdbId: work.tmdbId, imdbId: work.imdbId, doubanId: work.doubanId });
   const [query, setQuery] = useState(displayTitle(work));
@@ -601,7 +631,7 @@ function EditModal({ work, onClose, onSaved, onIgnored, onError }: { work: Work;
     <section><div className="modal-section-head"><h3>{t("匹配资料来源")}</h3></div><div className="match-search"><input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索电影或剧集名称")} onKeyDown={event => { if (event.key === 'Enter') void searchSource(); }}/><button disabled={busy} onClick={() => void searchSource()}><Search size={16}/>{t("搜索 TMDB")}</button></div>{candidates.map(candidate => <button className={`candidate ${edit.tmdbId === candidate.id ? 'chosen' : ''}`} key={candidate.id} onClick={() => patch({ tmdbId: candidate.id })}><span>{isEnglish() ? candidate.originalTitle : candidate.title}<small>{candidate.originalTitle} · {candidate.year ?? t("未知年份")} · TMDB #{candidate.id}</small></span>{edit.tmdbId === candidate.id && <Check size={17}/>}</button>)}<p className="helper">{t("当前 TMDB ID：")}{edit.tmdbId ?? t("未匹配")}{t("。选择新条目后，保存时自动更新海报和演职员；如还想自定义片名，可保存后再次编辑。")}</p></section>
     <section><div className="edit-fields">{!isEnglish() && <label className="setting-label">{t("中文片名")}<input value={edit.titleZh} onChange={event => patch({ titleZh: event.target.value })}/></label>}<label className="setting-label">{t("英文片名")}<input value={edit.titleEn} onChange={event => patch({ titleEn: event.target.value })}/></label><label className="setting-label">{t("年份")}<input type="number" min="1888" max="2100" value={edit.year ?? ''} onChange={event => patch({ year: event.target.value ? Number(event.target.value) : null })}/></label></div><label className="setting-label">{t("剧情简介")}<textarea value={isEnglish() && hasChineseText(edit.overview) ? '' : edit.overview} onChange={event => patch({ overview: event.target.value })} rows={4}/></label></section>
     <section><div className="edit-fields"><label className="setting-label">{t("IMDb 条目 ID")}<input value={edit.imdbId ?? ''} onChange={event => patch({ imdbId: event.target.value || null })} placeholder="tt1234567"/></label><label className="setting-label">{t("豆瓣条目 ID")}<input value={edit.doubanId ?? ''} onChange={event => patch({ doubanId: event.target.value || null })} placeholder={t("网址 /subject/ 后的数字")}/></label></div><p className="helper">{t("修改来源 ID 后将重新获取对应评分。豆瓣和 IMDb Top 250 标签分别按对应条目 ID 关联。")}</p></section>
-    <button className="tiny-link ignore" onClick={async () => { if (!window.confirm(t("确定忽略这个资源？可以在设置中恢复。"))) return; await window.library.ignoreWork(work.id); await onIgnored(); }}>{t("忽略此资源")}</button>
+    <button className="tiny-link ignore" disabled={busy} onClick={onIgnore}><EyeOff size={14}/>{t("忽略此资源")}</button>
   </div><div className="modal-footer"><button className="text-button" onClick={onClose}>{t("取消")}</button><button className="primary-button" disabled={busy} onClick={() => void save()}>{busy ? t("处理中") : t("保存修改")}</button></div></div></div>;
 }
 
