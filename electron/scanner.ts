@@ -57,6 +57,9 @@ function parsePart(raw: string): ParsedName {
   let prefix = raw.slice(0, cutoff);
   const token = releaseToken.exec(prefix);
   if (token) prefix = prefix.slice(0, token.index);
+  // Edition/region tags before the year are not part of the film's title.
+  prefix = prefix.replace(/(?:[. _-]+)(?:redux|(?:us|uk|fra)[. _-]+remastered[. _-]+edition|remastered(?:[. _-]+edition)?|criterion[. _-]+collection)$/i, '')
+    .replace(/-(?:ANKO|beAst|PbK|HDWinG|CMCT|HiFi|PTHOME)$/i, '');
   prefix = prefix.replace(/^[\[(【]\s*([^\])】]+)\s*[\])】]\s*[. _-]*/, '$1 ');
   prefix = prefix.replace(/[._]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[-–: \[\]()【】]+$/, '');
   let title = prefix || raw.replace(/[._]+/g, ' ').trim();

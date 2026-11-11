@@ -2,6 +2,7 @@ import type { Work } from '../src/shared.js';
 import { normalizeTitle, parseName } from './scanner.js';
 import { knownSeries, titleQueries } from './media-titles.js';
 import { movieChineseTitle } from './movie-titles.js';
+import { movieAlias } from './movie-aliases.js';
 
 export interface OmdbCandidate {
   Title: string;
@@ -18,7 +19,8 @@ export function omdbYear(value: string | undefined): number | null {
 }
 
 export function lookupYear(work: Work): number | null {
-  if (work.mediaType !== 'tv') return work.year;
+  if (work.mediaType !== 'tv') return work.year === null ? null :
+    movieAlias(work.titleEn || work.originalTitle || work.titleZh || '', work.year)?.year ?? work.year;
   const years = work.assets.filter(asset => asset.season === null || asset.season <= 1)
     .map(asset => parseName(asset.path, asset.kind).year)
     .filter((value): value is number => value !== null);
@@ -27,6 +29,10 @@ export function lookupYear(work: Work): number | null {
 
 export function omdbQueries(work: Work): string[] {
   const output: string[] = [];
+  if (work.mediaType === 'movie') {
+    const alias = [work.titleEn, work.originalTitle, work.titleZh].map(title => movieAlias(title, work.year)).find(Boolean);
+    if (alias) output.push(alias.title);
+  }
   // This 1983 film is commonly filed as “Nostalgia”, while IMDb/OMDb use “Nostalghia”.
   // Query the known title first so a different film named “Nostalgia” is not accepted.
   if (work.mediaType === 'movie' && work.year === 1983 &&
@@ -47,11 +53,14 @@ function withoutArticle(title: string): string {
 
 export function chooseOmdbCandidate(title: string, year: number | null, candidates: OmdbCandidate[]): OmdbCandidate | null {
   const target = normalizeTitle(title);
+  const alias = movieAlias(title, year);
   const scores = candidates.flatMap(candidate => {
+    if (alias?.imdbId && alias.imdbId !== candidate.imdbID) return [];
     const candidateYear = omdbYear(candidate.Year);
     const difference = year !== null && candidateYear !== null ? Math.abs(year - candidateYear) : 0;
     if (year !== null && (candidateYear === null || difference > 1)) return [];
-    const exact = normalizeTitle(candidate.Title) === target;
+    const exact = normalizeTitle(candidate.Title) === target || Boolean(alias &&
+      movieAlias(candidate.Title, candidateYear)?.title === alias.title);
     const articleOnly = withoutArticle(candidate.Title) === withoutArticle(title);
     if (!exact && !articleOnly) return [];
     return [{ candidate, score: (exact ? 100 : 70) + (year === null ? 0 : 2 - difference) }];

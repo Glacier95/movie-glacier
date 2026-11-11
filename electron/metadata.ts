@@ -5,6 +5,7 @@ import { session, type Session } from 'electron';
 import type { ConnectionChecks, MatchCandidate, MediaType, Person, Work } from '../src/shared.js';
 import { titleQueries } from './media-titles.js';
 import { tmdbScore, chooseTmdbCandidate } from './tmdb-match.js';
+import { movieAlias } from './movie-aliases.js';
 import { searchOmdbCandidate, lookupYear, omdbChineseTitle, omdbPeople, omdbYear, omdbQuotaMessage, omdbQuotaReached,
   safeOmdbPoster, checkOmdbYear, type OmdbCandidate } from './omdb.js';
 import { Store } from './store.js';
@@ -208,7 +209,7 @@ export class Metadata {
     const writers = omdbPeople(data.Writer);
     const rating = Number(data.imdbRating);
     this.store.setWorkFields(workId, {
-      imdbId, titleZh: omdbChineseTitle(work, title), titleEn: title, originalTitle: title,
+      imdbId, titleZh: omdbChineseTitle({ ...work, imdbId }, title), titleEn: title, originalTitle: title,
       year: expectedYear ?? matchedYear,
       overview: data.Plot && data.Plot !== 'N/A' ? data.Plot : work.overview,
       runtime: Number(/^\d+/.exec(String(data.Runtime ?? ''))?.[0]) || work.runtime,
@@ -239,7 +240,8 @@ export class Metadata {
   }
 
   async search(type: MediaType, title: string, year: number | null): Promise<MatchCandidate[]> {
-    const queries = titleQueries(title);
+    const alias = type === 'movie' ? movieAlias(title, year) : null;
+    const queries = [...new Set([...(alias ? [alias.title] : []), ...titleQueries(title)])];
     const results = new Map<number, MatchCandidate>();
     for (const query of queries) {
       const data = await this.tmdb(`search/${type}`, { query, language: 'zh-CN' });

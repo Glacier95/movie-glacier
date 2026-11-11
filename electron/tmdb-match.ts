@@ -1,10 +1,13 @@
 import type { MatchCandidate } from '../src/shared.js';
 import { mediaTitleKey } from './scanner.js';
 import { titleQueries } from './media-titles.js';
+import { movieAlias } from './movie-aliases.js';
 
 export function tmdbScore(title: string, year: number | null, candidate: MatchCandidate): number {
   const names = [candidate.title, candidate.originalTitle].map(mediaTitleKey).filter(Boolean);
-  const exact = titleQueries(title).some(query => names.includes(mediaTitleKey(query)));
+  const alias = movieAlias(title, year);
+  const exact = titleQueries(title).some(query => names.includes(mediaTitleKey(query))) || Boolean(alias &&
+    [candidate.title, candidate.originalTitle].some(name => movieAlias(name, candidate.year)?.title === alias.title));
   if (!exact) return 0; // A shorter title plus a matching year must never be an automatic match.
   if (year !== null && candidate.year === null) return 0;
   return 1 + (year !== null && candidate.year !== null

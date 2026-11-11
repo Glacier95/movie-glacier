@@ -297,10 +297,13 @@ export class Store {
   }
   ignoreWork(id: number): void {
     this.setWorkFields(id, { matchState: 'ignored' });
-    this.run('UPDATE tasks SET status=? WHERE workId=? AND status IN (?,?)', ['done', id, 'pending', 'running']);
+    this.run("UPDATE tasks SET status='skipped',error='已忽略资源',updatedAt=? WHERE workId=? AND status IN ('pending','running','failed')", [Date.now(), id]);
   }
   restoreWork(id: number): void { this.setWorkFields(id, { matchState: 'pending' }); }
   setWorkFields(id: number, fields: Partial<Work>): void {
+    // A provider request started before Ignore must not resurrect the title.
+    if ((fields.matchState === 'matched' || fields.matchState === 'manual') && this.one<{ matchState: string }>('SELECT matchState FROM works WHERE id=?', [id])?.matchState === 'ignored')
+      fields = { ...fields, matchState: 'ignored' };
     const allowed = new Set(['tmdbId','imdbId','doubanId','doubanTitleZh','doubanOverviewZh','doubanTags','titleZh','titleEn','originalTitle','year','overview','runtime','poster','backdrop','genres','countries','directors','creators','writers','actors','ratingDouban','ratingSeason','ratingImdb','doubanVotes','topRank','updatedAt','matchState']);
     const entries = Object.entries(fields).filter(([key]) => allowed.has(key));
     if (!entries.length) return;
@@ -407,6 +410,7 @@ export class Store {
     this.run("UPDATE works SET imdbTopRank=CASE WHEN mediaType='movie' THEN (SELECT rank FROM imdb_top250 WHERE imdbId=works.imdbId) END WHERE id=?", [id]);
   }
   queueTask(type: string, workId: number): void {
+    if (this.one<{ matchState: string }>('SELECT matchState FROM works WHERE id=?', [workId])?.matchState === 'ignored') return;
     if (this.one('SELECT id FROM tasks WHERE type=? AND workId=? AND status IN (?,?)', [type, workId, 'pending', 'running'])) return;
     this.run('INSERT INTO tasks(type,workId,status,updatedAt) VALUES(?,?,?,?)', [type, workId, 'pending', Date.now()]);
   }
@@ -442,6 +446,9 @@ export class Store {
         tasks.status,COALESCE(tasks.error,''),tasks.updatedAt FROM tasks LEFT JOIN works ON works.id=tasks.workId WHERE tasks.id=?`, [source ?? null, id]);
   }
   taskDone(id: number, error?: string, note = '', source?: string): void {
+    if (this.one("SELECT tasks.id FROM tasks JOIN works ON works.id=tasks.workId WHERE tasks.id=? AND works.matchState='ignored'", [id])) {
+      this.taskSkipped(id, '已忽略资源'); return;
+    }
     this.run('UPDATE tasks SET status=?,error=?,updatedAt=? WHERE id=?', [error ? 'failed' : 'done', (error ?? note) || null, Date.now(), id]);
     this.recordTask(id, source);
   }

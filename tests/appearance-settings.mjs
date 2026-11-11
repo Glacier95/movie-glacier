@@ -41,7 +41,7 @@ try {
   assert.doesNotMatch((await css('.settings-modal')).background, /rgba/);
   assert.deepEqual(subset(await page.evaluate(() => window.library.getSettings())), appearanceDefaults);
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  assert.match((await css('.topbar')).backdrop, /blur\(16px\)/);
+  assert.match((await css('.topbar')).backdrop, /blur\(3px\)/);
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await page.locator('.overview-panel').first().waitFor();
   await openSettings(); await slider('面板毛玻璃模糊程度').press('Home'); await slider('面板背景不透明度').press('Home');

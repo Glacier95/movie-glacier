@@ -1,5 +1,6 @@
 import type { Work } from '../src/shared.js';
 import { cleanTitle } from './title-cleanup.js';
+import { movieAliasById } from './movie-aliases.js';
 
 // Exact IMDb identities distinguish films even when their local Chinese names
 // contain only the franchise name. Never infer a part from the release year.
@@ -10,6 +11,8 @@ const movieTitles: Record<string, string> = {
 };
 
 export function movieChineseTitle(work: Pick<Work, 'mediaType' | 'imdbId'>, title: string): string {
+  const localized = work.mediaType === 'movie' ? movieAliasById(work.imdbId)?.titleZh : undefined;
+  if (localized && (!/\p{Script=Han}/u.test(title) || /^(?:父亲|父親|鸟人|鳥人|千与千寻|千與千尋)$/.test(title.trim()))) return localized;
   const known = work.mediaType === 'movie' && work.imdbId ? movieTitles[work.imdbId] : undefined;
   // Keep complete localized translations and custom titles; expand only a bare
   // franchise name (optionally followed by a part number) or a missing translation.

@@ -389,5 +389,11 @@ export const english: Record<string, string> = {
 "新加坡": "Singapore",
 "马来西亚": "Malaysia",
 "南非": "South Africa",
-"未知影片": "Unknown title"
+"未知影片": "Unknown title",
+"确认忽略": "Ignore title",
+"资源将从片库和抓取队列中隐藏，原始文件不会删除。你可以随时在设置中恢复。": "This title will be hidden from your library and scraping queue. Original files stay on disk. You can restore it in Settings at any time.",
+"正在优先使用 OMDb 抓取资料": "Fetching metadata with OMDb as the preferred source",
+"TMDB · 备用资料与海报（可选）": "TMDB · Backup metadata and artwork (optional)",
+"OMDb · 默认资料源与海报": "OMDb · Preferred metadata and artwork",
+"设置好目录和至少一种资料来源后，软件会自动识别文件名。默认优先使用 OMDb 抓取海报、演职员和 IMDb 评分，失败时尝试 TMDB；OMDb 无需 IMDb 账号。": "Choose your folders and configure a metadata source to recognize filenames automatically. OMDb is preferred for artwork, cast, crew and IMDb ratings, with TMDB as a fallback. No IMDb account is required."
 };

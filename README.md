@@ -13,7 +13,7 @@ A macOS and Windows desktop library for local movies and series. Browse animated
 - **资料与评分 / Metadata and ratings**：支持 TMDB、OMDb、豆瓣资料及 IMDb／豆瓣评分。Supports metadata from TMDB, OMDb, and Douban, with IMDb and Douban ratings.
 - **双榜单 / Top 250 charts**：豆瓣与 IMDb Top 250 独立筛选、详情排名及片库统计；更新库时每七天刷新，刷新全部资料可强制更新，访问失败保留完整缓存。Filter by Douban and IMDb Top 250, view ranks and collection counts. Charts refresh weekly during library updates or on a full metadata refresh; failed requests preserve the last complete chart.
 - **片库概览 / Collection overview**：交互图表展示类型、年代、地区、评分与演职员统计。Explore genres, years, regions, ratings, and director/cast statistics through interactive charts.
-- **界面与播放 / Appearance and playback**：海报连续展开、轻微倾斜与按压回弹，支持系统减少动态效果；中英文界面及可调毛玻璃。Shared poster transitions, subtle tilt and press feedback, system reduced-motion support, bilingual UI and adjustable glass surfaces. New libraries use a 16px panel blur and 68% panel opacity; existing saved appearance settings are preserved.
+- **界面与播放 / Appearance and playback**：海报连续展开、轻微倾斜与按压回弹，支持系统减少动态效果；中英文界面及可调毛玻璃，面板默认模糊 3px、不透明度 30%，保留已有设置。Shared poster transitions, subtle tilt and press feedback, system reduced-motion support, bilingual UI and adjustable glass surfaces. New libraries use a 3px panel blur and 30% panel opacity; existing saved appearance settings are preserved.
 - **Mac 适配 / macOS support**：原生窗口按钮及菜单、Dock 重开、⌘F 搜索、⌘, 设置、⌘1/2/3 切换视图；自动识别 IINA / VLC，可选其他 `.app` 或系统默认播放器。Native window controls and menus, Dock reopening, standard shortcuts, and IINA / VLC / default-player support.
 
 ## 界面预览 · Screenshots
@@ -44,6 +44,7 @@ Summarized from development records, with the main changes for each version. Ear
 
 | 版本 / Version | 更新概括 | Summary |
 | --- | --- | --- |
+| **1.0.5** | 抓取失败及待处理日志可直接忽略资源，使用统一毛玻璃确认框；默认优先 OMDb，失败后回退 TMDB；修复电影版本词、别名、错误年份及《鸟人》《困在时间里的父亲》识别，更新库时修正自动条目；面板默认 3px／30%。 | Ignore failed or pending titles from scrape logs with an in-app glass confirmation; prefer OMDb with TMDB fallback; repair edition tags, movie aliases, release-year errors, Birdman and The Father, including existing automatic entries on library updates; default panels to 3px blur and 30% opacity. |
 | **1.0.4** | 保存单条资料时取消全库扫描。数据库写入先刷盘，定期保留本地备份，启动时可从完整副本恢复并留存损坏文件。 | Saving one edit no longer scans the library. Flush database writes to disk, keep local snapshots, and recover from a valid copy while preserving the damaged file. |
 | **1.0.3** | 通用修复系列电影中文简称重复：按 IMDb 编号查询、缓存独立中文片名，缺少本地区译名时使用已核实的分部编号区分；完整副标题与手动中文名保留，已有电影升级后排队补全，覆盖《碟中谍》等系列。 | Resolve franchise abbreviations through exact IMDb-linked Chinese titles, using verified series ordinals when a regional translation is missing. Cache translations, retain full subtitles and manual titles, and queue existing movies for enrichment, with Mission: Impossible regression coverage. |
 | **1.0.2** | 区分《指环王》三部曲的完整中文片名，修复系列标题提取与已有重复简称；默认优先使用 OMDb 海报，更新已有海报时保留下载失败的缓存。 | Distinguish the Lord of the Rings trilogy's full Chinese titles, preserve localized sequel names and repair existing franchise abbreviations; prefer OMDb posters and retain cached artwork when downloads fail. |
