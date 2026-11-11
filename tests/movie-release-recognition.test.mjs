@@ -19,7 +19,7 @@ const releases = [
   ['Thelma.and.Louise.1991.CC.UHD.Blu-ray.2160p.10bit.HDR.3Audio.DTS-HD.MA.5.1.x265-beAst.mkv', 'file', 'Thelma and Louise', 1991, 'Thelma & Louise', 1991],
   ['Eight.and.a.Half.1963.1080p.BluRay.FLAC.x264-HiFi.mkv', 'file', 'Eight and a Half', 1963, '8½', 1963],
   ['The Godfather - Part II (1974) (2160p UHD BluRay x265 DV HDR DD 5.1 English - Weasley HONE).mkv', 'file', 'The Godfather - Part II', 1974, 'The Godfather: Part II', 1974],
-  ['The.Wave.2008.FRA.BluRay.1080p.AVC.DTS-HD.MA.5.1-ZimHook@PTHome', 'bdmv', 'The Wave', 2008, 'The Wave', 2008],
+  ['The.Wave.2008.FRA.BluRay.1080p.AVC.DTS-HD.MA.5.1-ZimHook@PTHome', 'bdmv', 'The Wave', 2008, 'The Wave', 2008, 'tt1063669'],
   ['[困在时间里的父亲].The.Father.2020.BluRay.1080p.x264.DTS-CMCT.mkv', 'file', '困在时间里的父亲 The Father', 2020, 'The Father', 2020, 'tt10272386'],
   ['[鸟人].Birdman.2014.BluRay.1080p.x264.AC3-CMCT.mkv', 'file', '鸟人 Birdman', 2014, 'Birdman or (The Unexpected Virtue of Ignorance)', 2014, 'tt2562232']
 ];
@@ -43,6 +43,21 @@ test('reported release names parse and resolve canonical OMDb titles without ren
   assert.equal(chooseOmdbCandidate('Birdman', 2014, [{ Title: 'Birdman', Year: '2014', imdbID: 'tt9999999' }]), null);
   assert.equal(chooseOmdbCandidate('The Wave', 2008, [{ Title: 'The Wave', Year: '2015', imdbID: 'tt9999999' }]), null);
   assert.equal(movieChineseTitle({ mediaType: 'movie', imdbId: 'tt10272386' }, '父亲'), '困在时间里的父亲');
+});
+
+test('The Wave tries its original title when English search is empty, and rejects other same-year identities', async () => {
+  const work = { mediaType: 'movie', titleZh: 'The Wave', titleEn: 'The Wave', originalTitle: '', year: 2008, assets: [] };
+  assert.deepEqual(omdbQueries(work), ['The Wave', 'Die Welle']);
+  const calls = [];
+  const result = await searchOmdbCandidate(work, async params => {
+    calls.push(params);
+    return params.s === 'Die Welle' ? { Response: 'True', Search: [{ Title: 'Die Welle', Year: '2008', imdbID: 'tt1063669' }] }
+      : { Response: 'False', Error: 'Movie not found!' };
+  });
+  assert.equal(result?.imdbID, 'tt1063669');
+  assert.ok(calls.some(call => call.s === 'Die Welle'));
+  assert.equal(chooseOmdbCandidate('The Wave', 2008, [{ Title: 'The Wave', Year: '2008', imdbID: 'tt9999999' }]), null);
+  assert.equal(chooseOmdbCandidate('The Wave', 2008, [{ Title: 'The Wave', Year: '2015', imdbID: 'tt1063669' }]), null);
 });
 
 test('update repairs existing automatic movie identities, preserving assets and manual edits; Ignore survives in-flight work', async t => {

@@ -19,7 +19,7 @@ const movies: MovieAlias[] = [
   { title: 'Thelma & Louise', year: 1991, aliases: ['Thelma and Louise', '末路狂花'] },
   { title: '8½', year: 1963, aliases: ['Eight and a Half', '8 1/2', '八部半'] },
   { title: 'The Godfather: Part II', year: 1974, aliases: ['The Godfather Part II', 'The Godfather Part 2', '教父2'] },
-  { title: 'The Wave', year: 2008, aliases: ['Die Welle', '浪潮'] },
+  { title: 'The Wave', year: 2008, aliases: ['Die Welle', '浪潮'], imdbId: 'tt1063669', titleZh: '浪潮' },
   { title: 'The Father', year: 2020, aliases: ['困在时间里的父亲'], imdbId: 'tt10272386', titleZh: '困在时间里的父亲' },
   { title: 'Birdman or (The Unexpected Virtue of Ignorance)', year: 2014, aliases: ['Birdman', '鸟人'], imdbId: 'tt2562232', titleZh: '鸟人' }
 ];

@@ -191,11 +191,17 @@ export class Metadata {
   async hydrateOmdb(workId: number, applyManualEdits = true): Promise<string[]> {
     const work = this.store.work(workId);
     if (!work) throw new Error('影片已不在资料库中');
-    const candidate = work.imdbId ? null : await this.omdbCandidate(work);
-    const imdbId = work.imdbId ?? candidate?.imdbID;
+    // A verified full title + release year can identify an indexed film even
+    // when OMDb's search endpoint omits it or indexes only its original title.
+    // Existing explicit identities always take precedence.
+    const knownId = work.mediaType === 'movie' ? [work.titleEn, work.originalTitle, work.titleZh]
+      .map(title => movieAlias(title, work.year)?.imdbId).find(Boolean) : undefined;
+    const candidate = work.imdbId || knownId ? null : await this.omdbCandidate(work);
+    const imdbId = work.imdbId ?? knownId ?? candidate?.imdbID;
     if (!imdbId) throw new Error('OMDb 未能可靠匹配片名和年份，已保留原条目供编辑确认');
     const data = await this.omdb({ i: imdbId, plot: 'full' });
     if (data.Response === 'False') throw new Error(`OMDb：${data.Error ?? '无结果'}`);
+    if (data.imdbID && data.imdbID !== imdbId) throw new Error('OMDb 返回的 IMDb ID 与请求不符，已保留原条目');
     if (data.Type !== (work.mediaType === 'movie' ? 'movie' : 'series')) throw new Error('OMDb 条目类型与本地资源不符');
     const expectedYear = lookupYear(work);
     const matchedYear = omdbYear(data.Year);
