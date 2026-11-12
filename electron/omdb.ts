@@ -31,7 +31,10 @@ export function omdbQueries(work: Work): string[] {
   const output: string[] = [];
   if (work.mediaType === 'movie') {
     const alias = [work.titleEn, work.originalTitle, work.titleZh].map(title => movieAlias(title, work.year)).find(Boolean);
-    if (alias) output.push(alias.title);
+    if (alias) {
+      for (const title of [alias.title, ...alias.aliases.filter(title => /[A-Za-z]/.test(title))])
+        if (!output.some(item => normalizeTitle(item) === normalizeTitle(title))) output.push(title);
+    }
   }
   // This 1983 film is commonly filed as “Nostalgia”, while IMDb/OMDb use “Nostalghia”.
   // Query the known title first so a different film named “Nostalgia” is not accepted.
